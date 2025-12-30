@@ -1,0 +1,16 @@
+[Unit]
+Description=AI Computer Control Agent
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=ultra
+WorkingDirectory=/home/ultra/proxmox-social/Ubu-Cont
+Environment="PATH=/home/ultra/proxmox-social/Ubu-Cont/ai-control/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+ExecStart=/home/ultra/proxmox-social/Ubu-Cont/ai-control/bin/python /home/ultra/proxmox-social/Ubu-Cont/src/main_ai_agent.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
