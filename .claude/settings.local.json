@@ -30,7 +30,17 @@
       "Bash(paste:*)",
       "Bash(ss -tlnp:*)",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(nc:*)",
+      "Bash(iptables:*)",
+      "Bash(ls:*)",
+      "Bash(echo:*)",
+      "Bash(lsusb:*)",
+      "Bash(qm config:*)",
+      "Bash(socat - UNIX-CONNECT:/var/run/qemu-server/101.qmp)",
+      "Bash(git pull:*)",
+      "Bash(printf:*)"
     ]
   }
 }

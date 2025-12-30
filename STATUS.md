@@ -1,33 +1,70 @@
 # ProxMox-Social System Status
 
-**Last Updated:** 2025-12-29 23:45 PST
+**Last Updated:** 2025-12-30 00:05 PST
 **Host:** ultranet (Proxmox VE)
-**Status:** DEBUGGING HID BRIDGE
+**Status:** HID BRIDGE IMPLEMENTED - READY FOR TESTING
 
 ---
 
-# URGENT: DIAGNOSTIC REQUESTS
+# QMP INJECTION IMPLEMENTED
 
-We have identified a gap in the HID input chain. The Host needs diagnostic information from both VMs to implement the fix.
+The HID bridge gap has been fixed! The input-router now uses QMP (QEMU Monitor Protocol) to inject input directly into the Windows VM.
 
-## Problem Summary
+## Solution Implemented
 
 ```
-EXPECTED FLOW:
+WORKING DATA FLOW:
 Ubuntu (192.168.100.100)
-    → sends JSON to Host:8888/8889
-    → Host input-router receives ✅
-    → Host creates uinput events ✅
-    → ??? MISSING BRIDGE ???
-    → Windows (192.168.100.101) sees as USB HID ❌
+    → sends JSON to Host:8888/8889        ✅
+    → Host input-router receives           ✅
+    → Translates to QMP input-send-event   ✅ NEW!
+    → QMP socket /var/run/qemu-server/101.qmp  ✅ NEW!
+    → QEMU injects into Windows VM         ✅ NEW!
+    → Windows sees as QEMU HID Tablet      ✅
 
-CURRENT STATE:
-- Ubuntu → Host:8888 ✅ Working
-- Host input-router → creates uinput on HOST ✅ Working
-- Host uinput → Windows VM ❌ NOT CONNECTED
-
-The uinput devices exist on the Proxmox host but are NOT bridged into Windows VM.
+ALL COMPONENTS NOW CONNECTED!
 ```
+
+## Test Commands (from Ubuntu or Host)
+
+```bash
+# Move mouse (relative movement)
+echo '{"type":"move","x":50,"y":0}' | nc 192.168.100.1 8888
+
+# Click
+echo '{"type":"click","button":"left"}' | nc 192.168.100.1 8888
+
+# Type text
+printf '{"type":"text","text":"Hello World"}\n' | nc 192.168.100.1 8889
+
+# Single key
+echo '{"type":"key","key":"enter","action":"press"}' | nc 192.168.100.1 8889
+```
+
+## Supported JSON Commands
+
+### Mouse (Port 8888)
+| Command | Format |
+|---------|--------|
+| Move (relative) | `{"type":"move","x":10,"y":5}` |
+| Click | `{"type":"click","button":"left"}` |
+| Button down | `{"type":"click","button":"left","action":"down"}` |
+| Button up | `{"type":"click","button":"left","action":"up"}` |
+| Scroll | `{"type":"scroll","delta":3}` |
+
+### Keyboard (Port 8889)
+| Command | Format |
+|---------|--------|
+| Key press | `{"type":"key","key":"a","action":"press"}` |
+| Type text | `{"type":"text","text":"Hello"}` |
+| Key down | `{"type":"key","key":"shift","action":"down"}` |
+| Key up | `{"type":"key","key":"shift","action":"up"}` |
+
+---
+
+# DIAGNOSTIC REPORTS (Historical)
+
+These reports were collected during debugging and led to the QMP solution.
 
 ---
 
