@@ -76,8 +76,15 @@ install_dependencies() {
 install_python_packages() {
     log_step "Installing Python Packages"
 
-    pip3 install --upgrade pip
-    pip3 install evdev
+    # Check if evdev is already available (installed via apt)
+    if python3 -c "import evdev" 2>/dev/null; then
+        log_info "python3-evdev already installed via apt"
+    else
+        # Try pip with --break-system-packages for older systems
+        pip3 install --break-system-packages evdev 2>/dev/null || \
+        pip3 install evdev 2>/dev/null || \
+        log_warn "Could not install evdev via pip, but apt package should work"
+    fi
 
     log_info "Python packages installed"
 }
@@ -175,8 +182,8 @@ create_config() {
 bridge_name = vmbr1
 bridge_ip = 192.168.100.1
 netmask = 24
-windows_vm_ip = 192.168.100.100
-ubuntu_vm_ip = 192.168.100.101
+ubuntu_vm_ip = 192.168.100.100
+windows_vm_ip = 192.168.100.101
 
 [hid_controller]
 mouse_port = 8888
@@ -212,7 +219,7 @@ print_summary() {
     echo "  - vnc-bridge.service (available, not enabled)"
     echo ""
     echo "Next steps:"
-    echo "  1. Create Windows VM (ID 100) and Ubuntu VM (ID 101)"
+    echo "  1. Create Ubuntu VM (ID 100) and Windows VM (ID 101)"
     echo "  2. Configure VMs to use vmbr1 for second NIC"
     echo "  3. Start services: systemctl start input-router"
     echo "  4. Set up Windows VM with w10-drivers scripts"

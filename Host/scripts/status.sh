@@ -96,41 +96,41 @@ main() {
     check_device "/dev/uhid" "UHID device"
     check_device "/dev/uinput" "uinput device"
 
-    # Check for virtual Logitech devices
-    if ls /dev/input/by-id/ 2>/dev/null | grep -qi logitech; then
-        check_ok "Virtual Logitech device found"
-        ls /dev/input/by-id/ | grep -i logitech | while read dev; do
-            echo "       $dev"
+    # Check for virtual Logitech devices (check /proc/bus/input/devices)
+    if grep -q "Logitech" /proc/bus/input/devices 2>/dev/null; then
+        check_ok "Virtual Logitech devices found"
+        grep -A2 "Logitech" /proc/bus/input/devices | grep "H: Handlers" | while read line; do
+            echo "       $line"
         done
     else
-        check_warn "No virtual Logitech devices (may need USB passthrough)"
+        check_warn "No virtual Logitech devices found"
     fi
 
     # VMs
     print_header "Virtual Machines"
     if command -v qm &>/dev/null; then
-        # Check Windows VM (100)
+        # Check Ubuntu VM (100)
         if qm status 100 &>/dev/null; then
             vm_status=$(qm status 100 | grep -oP 'status: \K\w+')
             if [[ "$vm_status" == "running" ]]; then
-                check_ok "Windows VM (100) is running"
+                check_ok "Ubuntu VM (100) is running"
             else
-                check_warn "Windows VM (100) exists but status: $vm_status"
+                check_warn "Ubuntu VM (100) exists but status: $vm_status"
             fi
         else
-            check_warn "Windows VM (100) not found"
+            check_warn "Ubuntu VM (100) not found"
         fi
 
-        # Check Ubuntu VM (101)
+        # Check Windows VM (101)
         if qm status 101 &>/dev/null; then
             vm_status=$(qm status 101 | grep -oP 'status: \K\w+')
             if [[ "$vm_status" == "running" ]]; then
-                check_ok "Ubuntu VM (101) is running"
+                check_ok "Windows VM (101) is running"
             else
-                check_warn "Ubuntu VM (101) exists but status: $vm_status"
+                check_warn "Windows VM (101) exists but status: $vm_status"
             fi
         else
-            check_warn "Ubuntu VM (101) not found"
+            check_warn "Windows VM (101) not found"
         fi
     else
         check_warn "Proxmox qm command not available"
@@ -139,18 +139,18 @@ main() {
     # Connectivity
     print_header "Connectivity"
 
-    # Ping Windows VM
+    # Ping Ubuntu VM
     if ping -c 1 -W 1 192.168.100.100 &>/dev/null; then
-        check_ok "Windows VM (192.168.100.100) is reachable"
+        check_ok "Ubuntu VM (192.168.100.100) is reachable"
     else
-        check_warn "Windows VM (192.168.100.100) is not reachable"
+        check_warn "Ubuntu VM (192.168.100.100) is not reachable"
     fi
 
-    # Ping Ubuntu VM
+    # Ping Windows VM
     if ping -c 1 -W 1 192.168.100.101 &>/dev/null; then
-        check_ok "Ubuntu VM (192.168.100.101) is reachable"
+        check_ok "Windows VM (192.168.100.101) is reachable"
     else
-        check_warn "Ubuntu VM (192.168.100.101) is not reachable"
+        check_warn "Windows VM (192.168.100.101) is not reachable"
     fi
 
     # Statistics

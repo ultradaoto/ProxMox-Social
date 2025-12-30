@@ -9,7 +9,7 @@
 
 set -e
 
-WINDOWS_VM_ID="${1:-100}"
+WINDOWS_VM_ID="${1:-101}"
 LOGITECH_VENDOR_ID="046d"
 LOGITECH_MOUSE_PRODUCT_ID="c52b"
 LOGITECH_KEYBOARD_PRODUCT_ID="c534"
@@ -163,7 +163,7 @@ usage() {
     echo "Usage: $0 [vm_id] [command]"
     echo ""
     echo "Arguments:"
-    echo "  vm_id     Windows VM ID (default: 100)"
+    echo "  vm_id     Windows VM ID (default: 101)"
     echo ""
     echo "Commands:"
     echo "  list      List USB devices"
@@ -173,8 +173,8 @@ usage() {
     echo "  all       Run all steps (default)"
     echo ""
     echo "Examples:"
-    echo "  $0 100 list    - List USB devices for VM 100"
-    echo "  $0 100 config  - Configure USB passthrough for VM 100"
+    echo "  $0 101 list    - List USB devices for VM 101"
+    echo "  $0 101 config  - Configure USB passthrough for VM 101"
 }
 
 main() {

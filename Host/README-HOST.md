@@ -12,13 +12,13 @@ sudo systemctl start virtual-hid
 sudo systemctl start vnc-bridge
 2. Start Windows VM
 bash
-qm start 100  # Windows VM
+qm start 101  # Windows VM
 # Wait 2 minutes for full boot
 3. Start Ubuntu AI Controller
 bash
-qm start 101  # Ubuntu VM
+qm start 100  # Ubuntu VM
 # Wait 1 minute for boot
-ssh ubuntu@192.168.100.101
+ssh ubuntu@192.168.100.100
 sudo systemctl start ai-agent
 4. Monitor System
 bash
@@ -215,8 +215,8 @@ bash
 # Find the virtual device
 ls -la /dev/input/by-id/
 
-# Add to Windows VM config (VMID=100)
-nano /etc/pve/qemu-server/100.conf
+# Add to Windows VM config (VMID=101)
+nano /etc/pve/qemu-server/101.conf
 Add to VM config:
 
 text
@@ -266,8 +266,8 @@ User=root
 WantedBy=multi-user.target
 6. Enable VNC/Spice for Screen Capture
 bash
-# For Windows VM (VMID=100)
-qm set 100 --vga virtio
+# For Windows VM (VMID=101)
+qm set 101 --vga virtio
 qm set 100 --serial0 socket
 qm set 100 --args '-device virtio-vga-gl -display gtk,gl=on'
 7. Network Configuration for VMs

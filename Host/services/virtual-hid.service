@@ -6,7 +6,7 @@ Wants=network.target
 
 [Service]
 Type=simple
-ExecStartPre=/usr/bin/chmod 666 /dev/uhid
+ExecStartPre=/usr/bin/chmod 666 /dev/uinput
 ExecStart=/usr/bin/python3 /opt/proxmox-computer-control/host/virtual-hid/create_virtual_hid.py
 Restart=always
 RestartSec=5
@@ -17,7 +17,6 @@ Group=root
 NoNewPrivileges=no
 
 # Device access
-DeviceAllow=/dev/uhid rw
 DeviceAllow=/dev/uinput rw
 
 # Logging

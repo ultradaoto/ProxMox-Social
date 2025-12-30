@@ -1,41 +1,47 @@
-# Proxmox VM Configuration - Ubuntu AI Controller (ID 101)
+# Proxmox VM Configuration - Windows 10 Target (ID 101)
 # Copy to /etc/pve/qemu-server/101.conf and adjust as needed
 
 # Basic VM settings
-name: Ubuntu-AI-Controller
+name: Windows10-Target
 vmgenid: auto
-ostype: l26  # Linux 2.6+ kernel
+ostype: win10
 scsihw: virtio-scsi-single
 machine: q35
 bios: ovmf  # UEFI boot
 
-# CPU and Memory - AI workloads need more resources
-cores: 8
+# CPU and Memory
+cores: 4
 sockets: 1
 cpu: host
-memory: 16384  # 16GB for AI models
+memory: 8192
 balloon: 0  # Disable ballooning for consistent performance
 
 # Storage (adjust path as needed)
-scsi0: local-lvm:vm-101-disk-0,size=100G,ssd=1,discard=on
-efidisk0: local-lvm:vm-101-disk-1,efitype=4m,size=1M
+scsi0: local-lvm:vm-101-disk-0,size=80G,ssd=1,discard=on
+efidisk0: local-lvm:vm-101-disk-1,efitype=4m,pre-enrolled-keys=1,size=1M
 
-# CD-ROM for Ubuntu installation (remove after install)
-# ide2: local:iso/ubuntu-22.04.3-live-server-amd64.iso,media=cdrom
+# CD-ROM for Windows installation (remove after install)
+# ide2: local:iso/Win10_22H2_English_x64.iso,media=cdrom
 
-# Display - minimal for server
-vga: std,memory=16
+# VirtIO drivers ISO (mount during Windows install)
+# ide3: local:iso/virtio-win-0.1.240.iso,media=cdrom
+
+# Display - VirtIO for best performance
+vga: virtio,memory=256
 
 # Network adapters
-# net0: External network for internet access (package downloads, Ollama)
+# net0: External network for internet access
 net0: virtio,bridge=vmbr0,firewall=1
-# net1: Internal bridge for communicating with host and Windows VM
+# net1: Internal bridge for AI controller communication
 net1: virtio,bridge=vmbr1,firewall=0
 
-# GPU Passthrough (uncomment if using dedicated GPU for AI)
-# Requires IOMMU enabled in BIOS and grub: intel_iommu=on or amd_iommu=on
-# Find GPU PCI address with: lspci -nn | grep -i nvidia
-# hostpci0: 0000:01:00.0,pcie=1,x-vga=1
+# USB Controller (xhci = USB 3.0)
+machine: pc-q35-8.1
+
+# Virtual Logitech HID devices (added by passthrough_usb.sh)
+# These appear as real USB devices in Windows
+usb0: host=046d:c52b,usb3=1
+usb1: host=046d:c534,usb3=1
 
 # QEMU Guest Agent
 agent: 1
@@ -46,23 +52,10 @@ boot: order=scsi0
 
 # Performance tuning
 numa: 0
-hotplug: network,disk
-
-# Additional features for AI workloads
-# Enable nested virtualization if needed
-args: -cpu host,+kvm_pv_unhalt,+kvm_pv_eoi
+hotplug: network,disk,usb
 
 # Protection
 protection: 0
 
 # Tags for organization
-tags: ubuntu;controller;ai
-
-# Notes:
-# After Ubuntu installation:
-# 1. Configure static IP on internal interface:
-#    - Edit /etc/netplan/00-installer-config.yaml
-#    - Set enp6s19 (or similar) to 192.168.100.101/24
-# 2. Install NVIDIA drivers if using GPU passthrough
-# 3. Install Ollama for local LLM inference
-# 4. Run ubu-cont/scripts/install_models.sh
+tags: windows;target;ai-control

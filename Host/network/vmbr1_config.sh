@@ -147,11 +147,11 @@ case "${1:-setup}" in
         log_info "Bridge setup complete!"
         echo ""
         echo "Next steps:"
-        echo "  1. Add to Windows VM (ID 100): qm set 100 --net1 virtio,bridge=$BRIDGE_NAME"
-        echo "  2. Add to Ubuntu VM (ID 101): qm set 101 --net1 virtio,bridge=$BRIDGE_NAME"
+        echo "  1. Add to Ubuntu VM (ID 100): qm set 100 --net1 virtio,bridge=$BRIDGE_NAME"
+        echo "  2. Add to Windows VM (ID 101): qm set 101 --net1 virtio,bridge=$BRIDGE_NAME"
         echo "  3. Configure static IPs inside VMs:"
-        echo "     - Windows: 192.168.100.100"
-        echo "     - Ubuntu:  192.168.100.101"
+        echo "     - Ubuntu:  192.168.100.100"
+        echo "     - Windows: 192.168.100.101"
         ;;
     status)
         show_status

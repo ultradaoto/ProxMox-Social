@@ -1,7 +1,36 @@
 {
   "permissions": {
     "allow": [
-      "Bash(mkdir -p:*)"
+      "Bash(mkdir -p:*)",
+      "Bash(systemctl status:*)",
+      "Bash(dpkg:*)",
+      "Bash(pip3 list:*)",
+      "Bash(qm list:*)",
+      "Bash(pveversion:*)",
+      "Bash(lsmod:*)",
+      "Bash(ip link:*)",
+      "Bash(cat:*)",
+      "Bash(chmod:*)",
+      "Bash(bash:*)",
+      "Bash(DEBIAN_FRONTEND=noninteractive bash:*)",
+      "Bash(DEBIAN_FRONTEND=noninteractive dpkg:*)",
+      "Bash(qm set:*)",
+      "Bash(systemctl start:*)",
+      "Bash(journalctl:*)",
+      "Bash(modprobe:*)",
+      "Bash(systemctl restart:*)",
+      "Bash(ip addr:*)",
+      "Bash(brctl show:*)",
+      "Bash(ping:*)",
+      "Bash(arp:*)",
+      "Bash(ip neigh:*)",
+      "Bash(timeout 5 tcpdump:*)",
+      "Bash(apt-get install:*)",
+      "Bash(systemctl is-active:*)",
+      "Bash(paste:*)",
+      "Bash(ss -tlnp:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
     ]
   }
 }
