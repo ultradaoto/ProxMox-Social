@@ -110,7 +110,39 @@ echo "Exit code: $?"
 
 ### UBUNTU REPORT:
 ```
-[Ubuntu VM: Please add your diagnostic output here]
+Timestamp: 2025-12-29 23:47 PST
+Agent: Gemini AI (running on Ubuntu VM)
+
+1. HID Configuration:
+   - No config at ~/.config/hid-controller/
+   - Using: /home/ultra/proxmox-social/Ubu-Cont/config.json
+   - Target Host: 192.168.100.1
+   - Mouse Port: 8888
+   - Keyboard Port: 8889
+
+2. Connectivity Tests:
+   - ping 192.168.100.1: FAILED (100% packet loss, ICMP blocked?)
+   - nc -zv 192.168.100.1 8888: SUCCESS
+   - nc -zv 192.168.100.1 8889: SUCCESS
+
+3. JSON Format Being Sent:
+   - Mouse move: {"type": "move", "x": 10, "y": 10}
+   - Mouse click: {"type": "click", "button": "left"}
+   - Key press: {"type": "key", "key": "enter"}
+   - Text input: {"type": "text", "text": "Hello"}
+
+4. Test Command Result:
+   $ echo '{"type":"mouse_move","x":10,"y":0}' | nc -w 1 192.168.100.1 8888
+   Exit code: 0 (no response expected)
+
+5. Understanding of Data Flow:
+   - Ubuntu sends JSON → Host:8888/8889
+   - Host virtual-hid creates uinput events
+   - UNCLEAR: How uinput events bridge to Windows VM
+   - Expected: USB passthrough or QMP injection
+
+CONCLUSION: TCP connectivity Ubuntu→Host is WORKING.
+The gap appears to be Host→Windows bridging.
 ```
 
 ---
