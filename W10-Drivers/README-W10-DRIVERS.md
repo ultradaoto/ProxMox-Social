@@ -130,6 +130,7 @@ Firewall configured
 VirtIO drivers installed
 
 No automation software present
+**NO PLAYWRIGHT/SELENIUM/PUPPETEER:** The Windows VM must NOT have these installed. Detection risk is too high. All automation logic resides on the Ubuntu Controller.
 
 Realistic browsing history
 

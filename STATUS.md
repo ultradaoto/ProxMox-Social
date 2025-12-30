@@ -69,7 +69,44 @@ Get-PnpDevice -Class Display | Format-Table Name, Status
 
 ### WINDOWS REPORT:
 ```
-[Windows VM: Please add your diagnostic output here]
+Timestamp: 2025-12-29 23:53 PST
+Agent: Gemini AI (running on Windows VM)
+
+1. Input Devices:
+   - Mouse: HID-compliant mouse (VID_0627&PID_0001) = QEMU HID Tablet
+   - Mouse: PS/2 Compatible Mouse (ACPI)
+   - Keyboard: Standard PS/2 Keyboard (ACPI)
+
+2. Logitech Devices:
+   - NONE DETECTED (but see note below)
+
+3. Network:
+   - IP: 192.168.100.101/24 on "Ethernet 2"
+   - Gateway: 192.168.100.1 (Host)
+   - Test-NetConnection to 192.168.100.1:8888 → FAILED (timed out)
+
+4. Display/Input Protocol:
+   - QEMU Guest Agent (qemu-ga): RUNNING
+   - SPICE guest tools: NOT INSTALLED
+   - Display: Microsoft Basic Display Adapter
+
+5. Understanding:
+   - Currently receiving input via QEMU HID Tablet (QMP injection)
+   - NO USB passthrough devices visible
+   - The bridge from Host uinput → Windows USB is NOT configured
+
+IMPORTANT NOTE ON DEVICE TYPE:
+Logitech branding is NOT a strict requirement. Websites cannot detect
+USB vendor/product IDs via the browser. Any functional USB HID mouse
+passed through from Proxmox will work. The goal is simply:
+  - A working mouse that moves the cursor
+  - A working keyboard that types
+Brand/model is irrelevant for anti-detection purposes.
+
+CONCLUSION:
+Windows needs ANY USB HID device passed through from Proxmox.
+Current QMP tablet injection works but shows as "QEMU HID Tablet".
+For better stealth, pass through the virtual uinput devices as USB.
 ```
 
 ---
