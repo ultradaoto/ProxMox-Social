@@ -1,7 +1,8 @@
 # ProxMox-Social System Status
 
-**Last Updated:** 2025-12-29
+**Last Updated:** 2025-12-29 22:20 PST
 **Host:** ultranet (Proxmox VE)
+**Status:** READY FOR TESTING
 
 ---
 
@@ -25,8 +26,8 @@
 
 | VMID | Name | Status | vmbr0 (external) | vmbr1 (internal) |
 |------|------|--------|------------------|------------------|
-| 100 | Ubuntu24 | RUNNING | DHCP | 192.168.100.100 (pending config) |
-| 101 | Windows10 | RUNNING | DHCP | 192.168.100.101 (pending config) |
+| 100 | Ubuntu24 | ONLINE | DHCP | 192.168.100.100 |
+| 101 | Windows10 | ONLINE | DHCP | 192.168.100.101 (RDP:3389 open) |
 
 ---
 
@@ -205,18 +206,37 @@ Data Flow:
 
 ---
 
-## Pending Issues
+## Current Connectivity Status
 
-1. **VM Network Interfaces Not Configured**
-   - Ubuntu: ens19 needs static IP 192.168.100.100
-   - Windows: Ethernet 2 needs static IP 192.168.100.101
+**All systems connected and ready for testing!**
 
-2. **No Physical HID Devices**
+| From | To | Status |
+|------|-----|--------|
+| Host | Ubuntu (192.168.100.100) | PING OK |
+| Host | Windows (192.168.100.101) | ARP OK (ping blocked by firewall) |
+| Ubuntu | Host HID ports (8888/8889) | READY TO TEST |
+
+## Next Steps for AI Agents
+
+### Ubuntu AI Agent (192.168.100.100)
+1. Test HID connectivity: `nc -zv 192.168.100.1 8888 && nc -zv 192.168.100.1 8889`
+2. Send test mouse command: `echo '{"type": "move", "x": 100, "y": 100}' | nc 192.168.100.1 8888`
+3. Send test keyboard command: `echo '{"type": "text", "text": "Hello"}' | nc 192.168.100.1 8889`
+
+### Windows Target (192.168.100.101)
+1. Observe mouse/keyboard input from Ubuntu's HID commands
+2. RDP available on port 3389 for remote monitoring
+
+---
+
+## Known Limitations
+
+1. **No Physical HID Devices Yet**
    - `/dev/hidg0` and `/dev/hidg1` don't exist on host
    - USB gadget mode may need hardware support or additional configuration
    - Current setup listens on TCP but can't output to real HID devices
 
-3. **USB Passthrough**
+2. **USB Passthrough**
    - Verify USB controller is passed through to Windows VM
    - Check `lsusb` inside Windows to confirm HID devices appear
 
