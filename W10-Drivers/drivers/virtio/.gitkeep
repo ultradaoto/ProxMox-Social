@@ -1,0 +1,11 @@
+# VirtIO Drivers Directory
+
+Place the VirtIO drivers ISO here for installation.
+
+Download from: https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/
+
+Recommended: virtio-win-0.1.xxx.iso (latest stable)
+
+Files to include:
+- virtio-win.iso (or mount during VM creation)
+- Individual driver folders if extracted

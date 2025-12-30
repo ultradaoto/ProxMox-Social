@@ -1,0 +1,29 @@
+[Unit]
+Description=Virtual HID Device Creation Service
+Documentation=https://github.com/your-repo/proxmox-computer-control
+After=network.target local-fs.target
+Wants=network.target
+
+[Service]
+Type=simple
+ExecStartPre=/usr/bin/chmod 666 /dev/uhid
+ExecStart=/usr/bin/python3 /opt/proxmox-computer-control/host/virtual-hid/create_virtual_hid.py
+Restart=always
+RestartSec=5
+
+# Security hardening
+User=root
+Group=root
+NoNewPrivileges=no
+
+# Device access
+DeviceAllow=/dev/uhid rw
+DeviceAllow=/dev/uinput rw
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=virtual-hid
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,94 @@
+# Ubuntu AI Controller - Python Dependencies
+# Install with: pip install -r requirements.txt
+
+# ===========================================
+# Core Dependencies
+# ===========================================
+
+# VNC/Screen Capture
+vncdotool>=1.1.0
+Pillow>=10.0.0
+opencv-python>=4.8.0
+
+# Vision AI
+torch>=2.0.0
+torchvision>=0.15.0
+ultralytics>=8.0.0
+easyocr>=1.7.0
+pytesseract>=0.3.10
+
+# HTTP/Networking
+requests>=2.31.0
+httpx>=0.25.0
+websockets>=12.0
+
+# Data Processing
+numpy>=1.24.0
+scipy>=1.11.0
+pyyaml>=6.0
+
+# Utilities
+python-dateutil>=2.8.2
+tqdm>=4.66.0
+
+# ===========================================
+# Behavioral Profiler Dependencies
+# ===========================================
+
+# Input capture and recording
+pynput>=1.7.6
+
+# Display and visualization
+pygame>=2.5.0
+matplotlib>=3.8.0
+
+# Statistical analysis (already have scipy)
+# Additional stats if needed
+# statsmodels>=0.14.0
+
+# Curve generation
+bezier>=2023.7.28
+
+# ===========================================
+# AI Integration
+# ===========================================
+
+# OpenRouter API (using httpx)
+# Already included above
+
+# ===========================================
+# Development
+# ===========================================
+
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+black>=23.0.0
+flake8>=6.1.0
+mypy>=1.5.0
+
+# Type stubs
+types-PyYAML>=6.0.0
+types-requests>=2.31.0
+
+# ===========================================
+# Optional: GPU acceleration
+# ===========================================
+
+# Uncomment if using NVIDIA GPU
+# --extra-index-url https://download.pytorch.org/whl/cu118
+# torch>=2.0.0+cu118
+# torchvision>=0.15.0+cu118
+
+# ===========================================
+# Optional: Enhanced profiling
+# ===========================================
+
+# Better time precision (Linux/macOS)
+# pyinput>=1.0.0
+
+# Screen recording
+# mss>=9.0.0
+
+# Advanced visualization
+# seaborn>=0.13.0
+# plotly>=5.18.0

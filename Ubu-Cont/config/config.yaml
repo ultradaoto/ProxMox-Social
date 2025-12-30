@@ -1,0 +1,67 @@
+# AI Computer Controller Configuration
+# Copy to config/config.yaml and adjust values
+
+# VNC Connection to Windows VM
+vnc:
+  host: "192.168.100.100"
+  port: 5900
+  password: "your_vnc_password"
+  timeout: 10.0
+
+# HID Controller on Proxmox Host
+hid:
+  host: "192.168.100.1"
+  mouse_port: 8888
+  keyboard_port: 8889
+  timeout: 5.0
+
+# Human-like Mouse Behavior
+mouse:
+  min_duration_ms: 100.0      # Minimum movement time
+  max_duration_ms: 800.0      # Maximum movement time
+  overshoot_probability: 0.15 # Chance of overshooting target
+  jitter_pixels: 3            # Random pixel jitter
+  fitts_law_a: 50.0          # Fitts's Law intercept (reaction time)
+  fitts_law_b: 150.0         # Fitts's Law slope (difficulty)
+
+# Human-like Keyboard Behavior
+keyboard:
+  base_wpm: 45               # Base typing speed
+  wpm_variance: 10           # Random WPM variation
+  typo_rate: 0.02            # Probability of typos (0.02 = 2%)
+  correction_delay_ms: 200.0 # Time before correcting typo
+  burst_words:               # Words typed faster
+    - "the"
+    - "and"
+    - "is"
+    - "to"
+    - "in"
+    - "a"
+    - "of"
+    - "for"
+    - "it"
+    - "be"
+
+# Timing Behavior
+timing:
+  min_think_time_ms: 300.0   # Minimum pause between actions
+  max_think_time_ms: 2000.0  # Maximum pause between actions
+  double_click_interval_ms: 100.0
+  scroll_pause_ms: 50.0
+  action_cooldown_ms: 100.0
+
+# Vision AI Configuration
+vision:
+  omniparser_model: "models/omniparser_v2.pt"
+  confidence_threshold: 0.7
+  use_ollama: true
+  ollama_host: "http://localhost:11434"
+  ollama_model: "qwen2.5-vl:7b"
+  ocr_lang: "en"
+
+# Agent Behavior
+agent:
+  capture_fps: 30
+  max_actions_per_minute: 60
+  screenshot_interval: 10
+  log_level: "INFO"

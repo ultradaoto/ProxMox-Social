@@ -1,0 +1,42 @@
+[Unit]
+Description=HID Input Router - TCP to Virtual HID Bridge
+Documentation=https://github.com/your-repo/proxmox-computer-control
+After=network.target virtual-hid.service
+Requires=virtual-hid.service
+Wants=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/proxmox-computer-control/host/virtual-hid/hid_controller.py
+Restart=always
+RestartSec=5
+
+# Run as root to access HID devices
+User=root
+Group=root
+
+# Environment
+Environment="PYTHONUNBUFFERED=1"
+Environment="HID_MOUSE_PORT=8888"
+Environment="HID_KEYBOARD_PORT=8889"
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=4096
+
+# Security
+ProtectSystem=strict
+ReadWritePaths=/dev/uhid /dev/uinput /dev/input
+PrivateTmp=true
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=input-router
+
+# Watchdog
+WatchdogSec=60
+NotifyAccess=all
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,254 @@
+# Behavioral Biometrics Profiler Configuration
+# =============================================
+# This file configures all aspects of the profiling system.
+
+# User Configuration
+user:
+  id: "sterling"
+  display_name: "Sterling"
+  profile_path: "profiles/sterling.yaml"
+
+# Recording Settings
+recording:
+  # Session storage
+  session_dir: "recordings/sessions"
+  calibration_dir: "recordings/calibrations"
+  profile_dir: "profiles"
+
+  # Mouse capture settings
+  mouse:
+    sample_rate_hz: 1000          # Capture rate (max ~1000 Hz)
+    min_velocity_threshold: 0.1   # Minimum velocity to record (px/s)
+    segment_gap_threshold: 0.1    # Gap between segments (seconds)
+    overshoot_threshold: 5        # Pixels to detect overshoot
+    jitter_window_ms: 50          # Window for jitter analysis
+
+  # Keyboard capture settings
+  keyboard:
+    record_key_content: true      # Record actual key pressed
+    anonymize_passwords: true     # Mask password field input
+    digraph_max_gap_ms: 2000      # Max gap for digraph analysis
+    session_idle_timeout: 5.0     # Seconds of idle to end session
+
+  # Auto-save settings
+  auto_save:
+    enabled: true
+    interval_seconds: 30
+    backup_on_crash: true
+
+# VNC Passthrough Settings
+vnc:
+  host: "192.168.100.10"          # Windows VM VNC address
+  port: 5900
+  password: null                   # Set via environment: VNC_PASSWORD
+  display:
+    window_title: "VNC Passthrough - Recording"
+    default_size: [1920, 1080]
+    target_fps: 60
+    show_recording_indicator: true
+
+# HID Controller Settings
+hid:
+  host: "192.168.100.1"           # Ubuntu container IP
+  mouse_port: 8888
+  keyboard_port: 8889
+  connection_timeout: 5.0
+  retry_attempts: 3
+
+# Analysis Settings
+analysis:
+  # Fitts's Law parameters
+  fitts_law:
+    min_distance: 10              # Minimum movement distance to analyze
+    max_distance: 2000            # Maximum movement distance
+    min_target_width: 5           # Minimum target width
+    default_target_width: 50      # Default target width when unknown
+
+  # Velocity analysis
+  velocity:
+    smoothing_window: 5           # Window for velocity smoothing
+    acceleration_threshold: 100   # Threshold for acceleration detection
+
+  # Keyboard analysis
+  keyboard:
+    min_iki_ms: 10                # Minimum inter-key interval
+    max_iki_ms: 5000              # Maximum inter-key interval
+    wpm_calculation_window: 60    # Seconds for WPM calculation
+
+  # Quality scoring
+  quality:
+    min_duration_seconds: 60      # Minimum session duration
+    min_mouse_events: 100         # Minimum mouse events
+    min_keyboard_events: 50       # Minimum keyboard events
+    ideal_event_density: 50       # Events per second for max score
+
+# Profile Generation Settings
+profile:
+  # Session selection
+  selection:
+    min_quality_score: 5.0        # Minimum quality to include
+    max_sessions: 20              # Maximum sessions to combine
+    prefer_recent: true           # Weight recent sessions higher
+    recent_weight_decay: 0.95     # Decay factor per session
+
+  # Statistical parameters
+  statistics:
+    confidence_level: 0.95        # Confidence interval
+    outlier_threshold: 3.0        # Standard deviations for outlier
+    distribution_types:           # Distributions to fit
+      - normal
+      - lognormal
+      - gamma
+
+  # Profile validation
+  validation:
+    require_fitts_data: true
+    require_digraph_data: true
+    min_completeness_score: 0.7
+
+# Replay Settings
+replay:
+  # Timing parameters
+  timing:
+    base_delay_ms: 1              # Base delay between events
+    jitter_enabled: true          # Add timing jitter
+    jitter_max_percent: 10        # Maximum jitter percentage
+
+  # Movement parameters
+  movement:
+    use_bezier_curves: true       # Use curved mouse paths
+    bezier_control_points: 2      # Number of control points
+    overshoot_simulation: true    # Simulate overshoots
+    overshoot_probability: 0.15   # Probability of overshoot
+
+  # Keyboard parameters
+  keyboard:
+    typo_injection: true          # Inject realistic typos
+    typo_base_rate: 0.02          # Base typo rate
+    correct_typos: true           # Correct injected typos
+    fatigue_simulation: true      # Slow down over time
+    fatigue_rate: 0.001           # Fatigue increase per minute
+
+# Calibration Settings
+calibration:
+  # Fitts's Law test
+  fitts_test:
+    num_trials: 50
+    target_sizes: [20, 40, 60, 80, 100]
+    distances: [100, 200, 400, 600, 800]
+    randomize: true
+
+  # Typing test
+  typing_test:
+    passages:
+      - "The quick brown fox jumps over the lazy dog."
+      - "Pack my box with five dozen liquor jugs."
+      - "How vexingly quick daft zebras jump!"
+    duration_seconds: 120
+    include_numbers: true
+    include_punctuation: true
+
+  # Scroll test
+  scroll_test:
+    duration_seconds: 60
+    directions: ["up", "down"]
+    scroll_types: ["smooth", "discrete"]
+
+# Visualization Settings
+visualization:
+  # Plot settings
+  plots:
+    dpi: 150
+    figsize: [12, 8]
+    style: "seaborn-v0_8-whitegrid"
+    colormap: "viridis"
+
+  # Trajectory visualization
+  trajectory:
+    line_width: 1
+    point_size: 2
+    show_velocity_color: true
+    velocity_colormap: "coolwarm"
+
+  # Heatmap settings
+  heatmap:
+    grid_size: 50
+    interpolation: "gaussian"
+    colormap: "hot"
+
+# AI Integration (OpenRouter)
+ai:
+  enabled: true
+  provider: "openrouter"
+
+  openrouter:
+    api_key_env: "OPENROUTER_API_KEY"  # Environment variable name
+    base_url: "https://openrouter.ai/api/v1"
+
+    # Model selection
+    models:
+      text: "qwen/qwen-2.5-coder-32b-instruct"
+      vision: "qwen/qwen-2-vl-72b-instruct"
+
+    # Request parameters
+    parameters:
+      temperature: 0.7
+      max_tokens: 4096
+      top_p: 0.9
+
+    # Rate limiting
+    rate_limit:
+      requests_per_minute: 60
+      tokens_per_minute: 100000
+
+    # Retry settings
+    retry:
+      max_attempts: 3
+      backoff_factor: 2.0
+
+# Logging Configuration
+logging:
+  level: "INFO"                   # DEBUG, INFO, WARNING, ERROR
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+  # File logging
+  file:
+    enabled: true
+    path: "logs/profiler.log"
+    max_size_mb: 10
+    backup_count: 5
+
+  # Console logging
+  console:
+    enabled: true
+    colored: true
+
+# Security Settings
+security:
+  # Data protection
+  data:
+    encrypt_profiles: false       # Encrypt profile files
+    hash_sensitive_keys: true     # Hash password field indicators
+    auto_purge_days: 90           # Auto-delete old sessions
+
+  # Access control
+  access:
+    require_confirmation: true    # Confirm destructive actions
+    log_all_access: true          # Log all profile access
+
+# Performance Settings
+performance:
+  # Threading
+  threading:
+    max_workers: 4
+    queue_size: 10000
+
+  # Memory
+  memory:
+    max_events_in_memory: 100000
+    flush_threshold: 50000
+
+  # Disk I/O
+  disk:
+    buffer_size: 8192
+    sync_interval_seconds: 5

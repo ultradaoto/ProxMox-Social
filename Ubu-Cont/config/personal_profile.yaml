@@ -1,0 +1,47 @@
+# Personal Behavior Profile
+# Learned from recording real human input
+# Use scripts/record_human.py to generate
+
+name: "default"
+created: "2024-01-01T00:00:00"
+updated: "2024-01-01T00:00:00"
+
+# Mouse Movement Parameters
+mouse:
+  avg_speed: 500.0          # pixels per second
+  speed_variance: 100.0
+  overshoot_rate: 0.15
+  jitter_amount: 3.0
+  fitts_law_a: 50.0
+  fitts_law_b: 150.0
+
+# Keyboard Timing Parameters
+keyboard:
+  typing_wpm: 45.0
+  wpm_variance: 10.0
+  typo_rate: 0.02
+  key_hold_duration_ms: 80.0
+  inter_key_interval_ms: 100.0
+
+# Common Patterns
+# These are learned from observation
+patterns:
+  # URL entry speed (faster for familiar domains)
+  url_typing_wpm: 60
+
+  # Password entry (slower, more careful)
+  password_typing_wpm: 30
+
+  # Search queries (natural variation)
+  search_typing_wpm: 50
+
+# Timing Patterns
+timing:
+  # After page load, wait before action
+  post_load_delay_ms: 500
+
+  # Between form fields
+  field_transition_ms: 200
+
+  # Before clicking important buttons
+  pre_submit_pause_ms: 300

@@ -1,0 +1,35 @@
+[Unit]
+Description=VNC Bridge - Optional VNC relay for screen capture
+Documentation=https://github.com/your-repo/proxmox-computer-control
+After=network.target
+Wants=network.target
+
+# This service is optional - only needed if direct VNC access is blocked
+# Usually the Ubuntu VM connects directly to Windows VM VNC
+
+[Service]
+Type=simple
+# Using socat to relay VNC from Windows VM to a local port
+# This allows Ubuntu VM to connect through the host if needed
+ExecStart=/usr/bin/socat TCP-LISTEN:15900,fork,reuseaddr TCP:192.168.100.100:5900
+Restart=always
+RestartSec=5
+
+User=nobody
+Group=nogroup
+
+# Resource limits
+LimitNOFILE=1024
+
+# Security
+ProtectSystem=strict
+PrivateTmp=true
+NoNewPrivileges=true
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=vnc-bridge
+
+[Install]
+WantedBy=multi-user.target

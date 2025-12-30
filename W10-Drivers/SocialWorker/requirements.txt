@@ -1,0 +1,33 @@
+# Social Worker Dependencies
+# Install with: pip install -r requirements.txt
+
+# HTTP/API
+requests>=2.31.0
+httpx>=0.25.0
+
+# Scheduling
+schedule>=1.2.0
+
+# Environment
+python-dotenv>=1.0.0
+
+# Browser automation
+playwright>=1.40.0
+
+# Image processing (for screenshots)
+Pillow>=10.0.0
+
+# Async support
+asyncio-compat>=0.1.0
+
+# Windows service support
+pywin32>=306
+
+# Logging enhancements
+coloredlogs>=15.0.0
+
+# JSON handling
+orjson>=3.9.0
+
+# For human-like delays
+numpy>=1.24.0
