@@ -1,14 +1,46 @@
 # ProxMox-Social System Status
 
-**Last Updated:** 2025-12-30 00:05 PST
+**Last Updated:** 2025-12-30 01:05 PST
 **Host:** ultranet (Proxmox VE)
-**Status:** HID BRIDGE IMPLEMENTED - READY FOR TESTING
+**Status:** FULLY WORKING - MOUSE & KEYBOARD OPERATIONAL
 
 ---
 
-# QMP INJECTION IMPLEMENTED
+# QMP INJECTION IMPLEMENTED - FULLY WORKING!
 
-The HID bridge gap has been fixed! The input-router now uses QMP (QEMU Monitor Protocol) to inject input directly into the Windows VM.
+The HID bridge is complete and tested! Mouse clicks and keyboard input are working.
+
+## Key Lessons Learned (2025-12-30)
+
+### 1. QEMU HID Tablet Uses ABSOLUTE Coordinates
+- The QEMU HID Tablet device uses **absolute** positioning (0-32767 range)
+- NOT relative movements like a physical mouse
+- Query with: `echo '{"execute":"query-mice"}' | socat - /var/run/qemu-server/101.qmp`
+- Shows: `"absolute": true` for the tablet device
+
+### 2. Screen Resolution MUST Match
+- **Windows VM resolution: 1280x800** (not 1920x1080!)
+- Wrong resolution = mouse jumps to wrong position
+- Conversion formula:
+  ```
+  qmp_x = (screen_x / 1280) * 32767
+  qmp_y = (screen_y / 800) * 32767
+  ```
+
+### 3. Coordinate Conversion Example
+- Ubuntu captures Chrome icon at screen position (508, 794)
+- Host converts: `(508/1280)*32767 = 13004`, `(794/800)*32767 = 32521`
+- QMP receives absolute coordinates (13004, 32521)
+- Mouse moves to correct position on Windows!
+
+### 4. Position Tracking for Relative Moves
+- Host tracks "virtual" mouse position starting at center (640, 400)
+- Relative moves (`type:move`) update tracked position
+- Then convert tracked position to QMP absolute coordinates
+
+### 5. Click Works Without Position
+- Click events don't need position - they click at current cursor location
+- That's why click worked before we fixed mouse movement
 
 ## Solution Implemented
 
