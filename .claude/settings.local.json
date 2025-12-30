@@ -43,7 +43,8 @@
       "Bash(printf:*)",
       "Bash(timeout 2 socat:*)",
       "Bash(systemctl stop:*)",
-      "Bash(socat:*)"
+      "Bash(socat:*)",
+      "Bash(sleep 2 echo \"Testing Chrome icon at \\(508, 794\\)...\" echo '{\"\"\"\"type\"\"\"\":\"\"\"\"abs\"\"\"\",\"\"\"\"x\"\"\"\":508,\"\"\"\"y\"\"\"\":794}')"
     ]
   }
 }
