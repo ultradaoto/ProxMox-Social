@@ -28,8 +28,13 @@ ALL COMPONENTS NOW CONNECTED!
 ## Test Commands (from Ubuntu or Host)
 
 ```bash
-# Move mouse (relative movement)
+# Move mouse RELATIVE (50px right from current position)
 echo '{"type":"move","x":50,"y":0}' | nc 192.168.100.1 8888
+
+# Move mouse ABSOLUTE (to screen coordinates)
+echo '{"type":"abs","x":960,"y":540}' | nc 192.168.100.1 8888   # Center
+echo '{"type":"abs","x":100,"y":100}' | nc 192.168.100.1 8888   # Top-left
+echo '{"type":"abs","x":1800,"y":900}' | nc 192.168.100.1 8888  # Bottom-right
 
 # Click
 echo '{"type":"click","button":"left"}' | nc 192.168.100.1 8888
@@ -39,6 +44,16 @@ printf '{"type":"text","text":"Hello World"}\n' | nc 192.168.100.1 8889
 
 # Single key
 echo '{"type":"key","key":"enter","action":"press"}' | nc 192.168.100.1 8889
+```
+
+## Debug Logging
+
+All commands are logged to `/tmp/input-router-debug.log` on the host:
+```
+[2025-12-30 00:48:54] INFO - RECV from 192.168.100.100: {"type":"move","x":50,"y":0}
+[2025-12-30 00:48:54] INFO - PARSED: relative move dx=50, dy=0
+[2025-12-30 00:48:54] INFO - CONVERTED: screen(1010,540) -> QMP(17235,16383)
+[2025-12-30 00:48:54] INFO - QMP RESULT: SUCCESS
 ```
 
 ## Supported JSON Commands
