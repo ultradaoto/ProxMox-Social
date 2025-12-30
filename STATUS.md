@@ -1,8 +1,144 @@
 # ProxMox-Social System Status
 
-**Last Updated:** 2025-12-29 22:20 PST
+**Last Updated:** 2025-12-29 23:45 PST
 **Host:** ultranet (Proxmox VE)
-**Status:** READY FOR TESTING
+**Status:** DEBUGGING HID BRIDGE
+
+---
+
+# URGENT: DIAGNOSTIC REQUESTS
+
+We have identified a gap in the HID input chain. The Host needs diagnostic information from both VMs to implement the fix.
+
+## Problem Summary
+
+```
+EXPECTED FLOW:
+Ubuntu (192.168.100.100)
+    → sends JSON to Host:8888/8889
+    → Host input-router receives ✅
+    → Host creates uinput events ✅
+    → ??? MISSING BRIDGE ???
+    → Windows (192.168.100.101) sees as USB HID ❌
+
+CURRENT STATE:
+- Ubuntu → Host:8888 ✅ Working
+- Host input-router → creates uinput on HOST ✅ Working
+- Host uinput → Windows VM ❌ NOT CONNECTED
+
+The uinput devices exist on the Proxmox host but are NOT bridged into Windows VM.
+```
+
+---
+
+## REQUEST FOR WINDOWS VM (192.168.100.101)
+
+**Please run these commands and add your report below:**
+
+### 1. Input Devices Detected
+```powershell
+Get-PnpDevice -Class Mouse | Format-Table Name, Status, InstanceId
+Get-PnpDevice -Class Keyboard | Format-Table Name, Status, InstanceId
+```
+
+### 2. Check for Virtual/Injected Input Devices
+- Are there any "Logitech USB Receiver" devices showing?
+- Any USB devices that appeared recently?
+```powershell
+Get-PnpDevice | Where-Object {$_.FriendlyName -like "*Logitech*"} | Format-Table
+```
+
+### 3. Network Configuration on Internal NIC
+```powershell
+Get-NetIPAddress | Where-Object {$_.IPAddress -like "192.168.100.*"}
+Test-NetConnection 192.168.100.1 -Port 8888
+```
+
+### 4. Display/Input Protocol
+- Is SPICE guest tools installed?
+- Is QEMU guest agent installed? (check for qemu-ga service)
+- What graphics adapter is showing in Device Manager?
+```powershell
+Get-Service qemu-ga -ErrorAction SilentlyContinue
+Get-PnpDevice -Class Display | Format-Table Name, Status
+```
+
+### 5. Your Understanding
+- How do you EXPECT to receive HID input from Ubuntu?
+- What devices should appear when input arrives?
+
+### WINDOWS REPORT:
+```
+[Windows VM: Please add your diagnostic output here]
+```
+
+---
+
+## REQUEST FOR UBUNTU VM (192.168.100.100)
+
+**Please run these commands and add your report below:**
+
+### 1. Current HID Configuration
+```bash
+# Show any config files for HID
+cat ~/.config/hid-controller/config.json 2>/dev/null || echo "No config found"
+# What IP/port are you configured to send to?
+```
+
+### 2. Test Connectivity to Host
+```bash
+ping -c 2 192.168.100.1
+nc -zv 192.168.100.1 8888
+nc -zv 192.168.100.1 8889
+```
+
+### 3. Show Exact JSON Format You're Sending
+What does your code send for:
+- Mouse move?
+- Mouse click?
+- Key press?
+
+### 4. Test a Command and Show Response
+```bash
+echo '{"type":"mouse_move","x":10,"y":0}' | nc -w 1 192.168.100.1 8888
+echo "Exit code: $?"
+```
+
+### 5. Your Understanding of Data Flow
+- Where do you think commands go after hitting the host?
+- How do you expect them to reach Windows?
+
+### UBUNTU REPORT:
+```
+[Ubuntu VM: Please add your diagnostic output here]
+```
+
+---
+
+## HOST FINDINGS (Proxmox)
+
+The host has confirmed:
+
+1. **input-router service**: RUNNING (but unstable, 87+ restarts due to watchdog)
+2. **Ports 8888/8889**: LISTENING
+3. **Virtual uinput devices created**: YES
+   - Mouse: `/dev/input/event15` (Logitech USB Receiver)
+   - Keyboard: `/dev/input/event16` (Logitech USB Receiver)
+4. **QMP socket available**: `/var/run/qemu-server/101.qmp`
+5. **QMP input injection tested**: WORKS (mouse moved via QMP)
+
+### Potential Solutions Being Evaluated:
+
+| Option | Method | Detectability | Status |
+|--------|--------|---------------|--------|
+| A | evdev passthrough | Low (real device) | Device numbers change on restart |
+| B | QMP injection | Medium (QEMU tablet) | Works but shows as "QEMU HID Tablet" |
+| C | SPICE input | Medium | Requires display change |
+| D | USB/IP forwarding | Low | Complex setup |
+
+**Current Windows VM input devices (via QMP):**
+- QEMU PS/2 Mouse (index 2)
+- QEMU HID Tablet (index 3, currently active)
 
 ---
 
