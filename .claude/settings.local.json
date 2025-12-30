@@ -40,7 +40,10 @@
       "Bash(qm config:*)",
       "Bash(socat - UNIX-CONNECT:/var/run/qemu-server/101.qmp)",
       "Bash(git pull:*)",
-      "Bash(printf:*)"
+      "Bash(printf:*)",
+      "Bash(timeout 2 socat:*)",
+      "Bash(systemctl stop:*)",
+      "Bash(socat:*)"
     ]
   }
 }
