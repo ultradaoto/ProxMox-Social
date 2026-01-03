@@ -1,476 +1,384 @@
 """
-Social Dashboard Queue Fetcher
+Social Dashboard Queue Fetcher for Windows 10
 
-Polls the Sterling Social Dashboard API for pending posts that require
-GUI automation (Facebook, Instagram, TikTok, YouTube) and downloads
-them for the computer-use agent to process.
+Downloads pending posts from social.sterlingcooley.com and saves them
+to C:\PostQueue\pending\ for the Ubuntu Poster to process.
 
-Usage:
-    python fetcher.py              # Run continuously
-    python fetcher.py --once       # Single fetch cycle
-    python fetcher.py --status     # Check connection status
+SECURITY: This script can ONLY access social.sterlingcooley.com
+          No other domains are permitted.
 """
-
 import os
 import sys
 import json
 import time
 import logging
 import argparse
-import hashlib
 from pathlib import Path
 from datetime import datetime
-from typing import List, Dict, Any, Optional
-from functools import wraps
+from urllib.parse import urlparse
+from typing import Optional, List, Dict, Any
 
 import requests
 import schedule
 from dotenv import load_dotenv
 
-# Load environment
+# Load environment variables
 load_dotenv()
 
-# Configuration
-DASHBOARD_URL = os.getenv('DASHBOARD_URL', 'https://sterlingcooley.com')
+# =============================================================================
+# CONFIGURATION
+# =============================================================================
+
+DASHBOARD_URL = os.getenv('DASHBOARD_URL', 'https://social.sterlingcooley.com')
 API_KEY = os.getenv('API_KEY', '')
 QUEUE_DIR = Path(os.getenv('QUEUE_DIR', 'C:/PostQueue'))
-POLL_INTERVAL = int(os.getenv('POLL_INTERVAL_MINUTES', 5))
-LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO')
+POLL_INTERVAL = int(os.getenv('POLL_INTERVAL', '5'))  # minutes
 
-# Setup logging
-def setup_logging():
-    """Configure logging with file and console output."""
-    log_dir = Path(__file__).parent / 'logs'
-    log_dir.mkdir(exist_ok=True)
+# =============================================================================
+# SECURITY: DOMAIN ALLOWLIST - DO NOT MODIFY
+# =============================================================================
 
-    log_file = log_dir / f"fetcher_{datetime.now().strftime('%Y%m%d')}.log"
+ALLOWED_DOMAINS = frozenset([
+    'social.sterlingcooley.com',
+])
 
-    logging.basicConfig(
-        level=getattr(logging, LOG_LEVEL),
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.FileHandler(log_file, encoding='utf-8'),
-            logging.StreamHandler()
-        ]
-    )
-    return logging.getLogger('fetcher')
+def is_allowed_url(url: str) -> bool:
+    """Check if URL is in the allowed domain list."""
+    try:
+        parsed = urlparse(url)
+        domain = parsed.netloc.lower()
+        # Remove port if present
+        if ':' in domain:
+            domain = domain.split(':')[0]
+        return domain in ALLOWED_DOMAINS
+    except Exception:
+        return False
 
-logger = setup_logging()
+def safe_request(method: str, url: str, **kwargs) -> requests.Response:
+    """
+    Make HTTP request ONLY if URL is in allowed domains.
+    Raises SecurityError if domain is not allowed.
+    """
+    if not is_allowed_url(url):
+        raise SecurityError(f"BLOCKED: Domain not in allowlist: {url}")
+    
+    return requests.request(method, url, **kwargs)
 
-
-class APIError(Exception):
-    """API communication error."""
+class SecurityError(Exception):
+    """Raised when attempting to access a non-allowed domain."""
     pass
 
+# =============================================================================
+# LOGGING
+# =============================================================================
+
+LOG_DIR = Path('C:/SocialWorker/logs')
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(LOG_DIR / 'fetcher.log', encoding='utf-8'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger('fetcher')
+
+# =============================================================================
+# QUEUE FETCHER
+# =============================================================================
 
 class QueueFetcher:
     """
-    Fetches pending posts from Social Dashboard and prepares them for posting.
-
-    Flow:
-    1. Poll /api/queue/pending for due posts
-    2. For each post, create a job folder
-    3. Download all media files
-    4. Write job.json with metadata
-    5. Computer-use agent picks up from here
+    Fetches pending posts from Social Dashboard API.
+    Downloads media and creates job folders for the Poster.
     """
-
+    
     def __init__(self):
-        self.session = requests.Session()
-        self.session.headers.update({
-            'X-API-Key': API_KEY,
-            'User-Agent': 'SocialWorker/1.0',
-            'Accept': 'application/json'
-        })
-
-        # Queue directories
         self.pending_dir = QUEUE_DIR / 'pending'
-        self.in_progress_dir = QUEUE_DIR / 'in_progress'
-        self.completed_dir = QUEUE_DIR / 'completed'
-        self.failed_dir = QUEUE_DIR / 'failed'
-
-        # Create directories
-        for d in [self.pending_dir, self.in_progress_dir,
-                  self.completed_dir, self.failed_dir]:
-            d.mkdir(parents=True, exist_ok=True)
-
-        # Stats
-        self.stats = {
-            'total_fetched': 0,
-            'total_downloaded': 0,
-            'last_fetch': None,
-            'errors': 0
+        self.pending_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Verify dashboard URL is allowed
+        if not is_allowed_url(DASHBOARD_URL):
+            raise SecurityError(f"Dashboard URL not in allowlist: {DASHBOARD_URL}")
+        
+        logger.info(f"Fetcher initialized")
+        logger.info(f"  Dashboard: {DASHBOARD_URL}")
+        logger.info(f"  Queue dir: {QUEUE_DIR}")
+    
+    def _get_headers(self) -> Dict[str, str]:
+        """Get API request headers."""
+        return {
+            'X-API-Key': API_KEY,
+            'Content-Type': 'application/json',
         }
-
-    def check_connection(self) -> Dict[str, Any]:
+    
+    def fetch_pending_posts(self) -> List[Dict[str, Any]]:
         """
-        Test connection to the dashboard API.
-
-        Returns:
-            Status dictionary with connection info
-        """
-        try:
-            response = self.session.get(
-                f"{DASHBOARD_URL}/api/queue/pending",
-                timeout=10
-            )
-
-            return {
-                'connected': response.status_code == 200,
-                'status_code': response.status_code,
-                'dashboard_url': DASHBOARD_URL,
-                'api_key_set': bool(API_KEY),
-                'response_time_ms': response.elapsed.total_seconds() * 1000
-            }
-
-        except requests.exceptions.ConnectionError:
-            return {
-                'connected': False,
-                'error': 'Connection refused - is the dashboard running?',
-                'dashboard_url': DASHBOARD_URL
-            }
-        except Exception as e:
-            return {
-                'connected': False,
-                'error': str(e),
-                'dashboard_url': DASHBOARD_URL
-            }
-
-    def fetch_pending(self) -> List[Dict[str, Any]]:
-        """
-        Fetch list of pending posts from dashboard.
-
+        Fetch list of pending posts from dashboard API.
+        
         Returns:
             List of post dictionaries
         """
+        url = f"{DASHBOARD_URL}/api/queue/gui/pending"
+        
         try:
-            response = self.session.get(
-                f"{DASHBOARD_URL}/api/queue/pending",
-                timeout=30
-            )
-
-            if response.status_code == 401:
-                raise APIError("Invalid API key")
-            elif response.status_code == 404:
-                raise APIError("Queue API endpoint not found - is it implemented?")
-
+            response = safe_request('GET', url, headers=self._get_headers(), timeout=30)
             response.raise_for_status()
-
+            
             posts = response.json()
-            logger.debug(f"API returned {len(posts)} pending posts")
+            logger.info(f"Fetched {len(posts)} pending post(s)")
             return posts
-
-        except requests.exceptions.Timeout:
-            logger.error("Request timed out fetching pending posts")
-            self.stats['errors'] += 1
-            return []
-        except requests.exceptions.ConnectionError:
-            logger.error(f"Cannot connect to {DASHBOARD_URL}")
-            self.stats['errors'] += 1
-            return []
-        except APIError as e:
-            logger.error(f"API error: {e}")
-            self.stats['errors'] += 1
-            return []
-        except Exception as e:
+            
+        except SecurityError:
+            raise
+        except requests.exceptions.RequestException as e:
             logger.error(f"Failed to fetch pending posts: {e}")
-            self.stats['errors'] += 1
             return []
-
+    
     def download_media(self, media_id: str, save_path: Path) -> bool:
         """
         Download a media file from the dashboard.
-
+        
         Args:
-            media_id: Media file ID
-            save_path: Local path to save file
-
+            media_id: Media ID from the post
+            save_path: Local path to save the file
+            
         Returns:
-            True if download succeeded
+            True if successful
         """
+        url = f"{DASHBOARD_URL}/api/queue/gui/media/{media_id}"
+        
         try:
-            response = self.session.get(
-                f"{DASHBOARD_URL}/api/queue/media/{media_id}",
-                timeout=300,  # 5 min timeout for large videos
+            response = safe_request(
+                'GET', url,
+                headers=self._get_headers(),
+                timeout=120,  # Longer timeout for large files
                 stream=True
             )
             response.raise_for_status()
-
-            # Get file size for progress
-            total_size = int(response.headers.get('content-length', 0))
-            downloaded = 0
-
+            
+            # Write file in chunks
             with open(save_path, 'wb') as f:
                 for chunk in response.iter_content(chunk_size=8192):
-                    f.write(chunk)
-                    downloaded += len(chunk)
-
-                    # Log progress for large files
-                    if total_size > 10_000_000:  # 10MB+
-                        progress = (downloaded / total_size) * 100
-                        if downloaded % (total_size // 10) < 8192:
-                            logger.debug(f"Download progress: {progress:.0f}%")
-
-            # Verify file was written
-            if save_path.stat().st_size == 0:
-                logger.error(f"Downloaded file is empty: {save_path}")
-                return False
-
-            logger.info(f"Downloaded: {save_path.name} ({save_path.stat().st_size:,} bytes)")
-            self.stats['total_downloaded'] += 1
+                    if chunk:
+                        f.write(chunk)
+            
+            logger.info(f"Downloaded media: {save_path.name} ({save_path.stat().st_size} bytes)")
             return True
-
+            
+        except SecurityError:
+            raise
         except Exception as e:
             logger.error(f"Failed to download media {media_id}: {e}")
             return False
-
+    
     def job_exists(self, post_id: str) -> bool:
-        """Check if a job already exists for this post ID."""
-        # Check all queue directories
-        for directory in [self.pending_dir, self.in_progress_dir,
-                         self.completed_dir, self.failed_dir]:
-            for job_dir in directory.iterdir():
-                if job_dir.is_dir() and post_id in job_dir.name:
-                    return True
+        """Check if a job already exists for this post (in any state)."""
+        for state_dir in ['pending', 'in_progress', 'completed', 'failed']:
+            state_path = QUEUE_DIR / state_dir
+            if state_path.exists():
+                for job_dir in state_path.iterdir():
+                    if job_dir.is_dir() and post_id in job_dir.name:
+                        return True
         return False
-
-    def create_job(self, post: Dict[str, Any]) -> Optional[str]:
+    
+    def create_job(self, post: Dict[str, Any]) -> bool:
         """
         Create a job folder for a pending post.
-
+        
         Structure:
-            C:\\PostQueue\\pending\\job_{timestamp}_{id}\\
-                job.json        # Job metadata and instructions
-                media_1.jpg     # First media file
-                media_2.mp4     # Second media file (if any)
-
+            C:\PostQueue\pending\job_{timestamp}_{id}\
+                job.json       - All post metadata
+                media_1.jpg    - Downloaded image
+                media_2.mp4    - Downloaded video (if any)
+        
         Args:
             post: Post dictionary from API
-
+            
         Returns:
-            Job ID if created, None if failed
+            True if job created successfully
         """
-        post_id = post.get('id', '')
-
+        post_id = post.get('id', 'unknown')
+        
         # Check for duplicates
         if self.job_exists(post_id):
-            logger.debug(f"Job already exists for post {post_id}")
-            return None
-
-        # Generate job ID
+            logger.debug(f"Job already exists for post {post_id}, skipping")
+            return False
+        
+        # Create job folder
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        short_id = post_id[:8] if len(post_id) > 8 else post_id
-        job_id = f"job_{timestamp}_{short_id}"
+        job_id = f"job_{timestamp}_{post_id}"
         job_dir = self.pending_dir / job_id
-
+        
         try:
             job_dir.mkdir(parents=True, exist_ok=True)
-            logger.info(f"Creating job: {job_id}")
-
+            
             # Download media files
             media_files = []
             for i, media in enumerate(post.get('media', [])):
-                # Determine file extension
+                media_id = media.get('id')
                 filename = media.get('filename', f'media_{i+1}')
-                ext = Path(filename).suffix or self._guess_extension(media.get('type', 'image'))
+                ext = Path(filename).suffix or '.jpg'
                 local_name = f"media_{i+1}{ext}"
                 local_path = job_dir / local_name
-
-                if self.download_media(media['id'], local_path):
+                
+                if self.download_media(media_id, local_path):
                     media_files.append({
-                        'index': i + 1,
                         'type': media.get('type', 'image'),
                         'local_path': local_name,
-                        'original_filename': filename
+                        'original_filename': filename,
                     })
                 else:
                     # Failed to download - cleanup and abort
-                    logger.error(f"Failed to download media, aborting job {job_id}")
+                    logger.error(f"Failed to download media for job {job_id}")
                     self._cleanup_job(job_dir)
-                    return None
-
-            # Build job.json
+                    return False
+            
+            # Write job.json
             job_data = {
                 'id': post_id,
                 'job_id': job_id,
-                'platform': post.get('platform', '').lower(),
-                'scheduled_time': post.get('scheduled_time'),
+                'platform': post.get('platform', ''),
+                'scheduled_time': post.get('scheduled_time', ''),
                 'caption': post.get('caption', ''),
                 'media': media_files,
                 'link': post.get('link'),
-                'hashtags': post.get('hashtags', []),
-                'mentions': post.get('mentions', []),
-
-                # Job metadata
                 'status': 'pending',
                 'created_at': datetime.now().isoformat(),
-                'attempts': 0,
-                'max_attempts': 3,
-
-                # Platform-specific options
-                'options': post.get('options', {})
+                'fetched_from': DASHBOARD_URL,
             }
-
-            # Write job.json
+            
             job_file = job_dir / 'job.json'
             with open(job_file, 'w', encoding='utf-8') as f:
                 json.dump(job_data, f, indent=2, ensure_ascii=False)
-
-            # Write a signal file for the poster to detect new jobs
-            signal_file = job_dir / '.ready'
-            signal_file.touch()
-
-            logger.info(f"Job created successfully: {job_id} ({post['platform']})")
-            self.stats['total_fetched'] += 1
-
-            return job_id
-
+            
+            logger.info(f"Created job: {job_id} ({post.get('platform')})")
+            return True
+            
         except Exception as e:
-            logger.error(f"Failed to create job for {post_id}: {e}")
+            logger.exception(f"Failed to create job for {post_id}: {e}")
             self._cleanup_job(job_dir)
-            return None
-
-    def _guess_extension(self, media_type: str) -> str:
-        """Guess file extension from media type."""
-        extensions = {
-            'image': '.jpg',
-            'video': '.mp4',
-            'gif': '.gif',
-            'png': '.png',
-            'jpeg': '.jpg',
-            'mp4': '.mp4',
-            'mov': '.mov',
-            'webp': '.webp'
-        }
-        return extensions.get(media_type.lower(), '.bin')
-
+            return False
+    
     def _cleanup_job(self, job_dir: Path):
-        """Remove a failed job directory."""
+        """Remove a partially created job folder."""
         try:
-            import shutil
             if job_dir.exists():
+                import shutil
                 shutil.rmtree(job_dir)
         except Exception as e:
-            logger.error(f"Failed to cleanup {job_dir}: {e}")
-
-    def run_once(self):
-        """Execute a single fetch cycle."""
-        logger.info("="*50)
-        logger.info("Starting fetch cycle")
-        logger.info(f"Dashboard: {DASHBOARD_URL}")
-
-        self.stats['last_fetch'] = datetime.now().isoformat()
-
-        # Fetch pending posts
-        pending = self.fetch_pending()
-
-        if not pending:
-            logger.info("No pending posts found")
-            return
-
-        logger.info(f"Found {len(pending)} pending posts")
-
-        # Process each post
+            logger.error(f"Failed to cleanup job folder: {e}")
+    
+    def run_once(self) -> int:
+        """
+        Single fetch cycle.
+        
+        Returns:
+            Number of jobs created
+        """
+        logger.info("Checking for pending posts...")
+        
+        posts = self.fetch_pending_posts()
+        if not posts:
+            logger.info("No pending posts")
+            return 0
+        
         created = 0
-        for post in pending:
-            job_id = self.create_job(post)
-            if job_id:
+        for post in posts:
+            if self.create_job(post):
                 created += 1
-
-        logger.info(f"Created {created} new jobs")
-        logger.info(f"Stats: {json.dumps(self.stats, indent=2)}")
-
+        
+        logger.info(f"Created {created} new job(s)")
+        return created
+    
     def run_forever(self):
-        """Run fetch loop on schedule."""
-        logger.info("="*60)
-        logger.info("  SOCIAL DASHBOARD QUEUE FETCHER")
-        logger.info("="*60)
-        logger.info(f"Dashboard URL: {DASHBOARD_URL}")
-        logger.info(f"Queue Directory: {QUEUE_DIR}")
-        logger.info(f"Poll Interval: {POLL_INTERVAL} minutes")
-        logger.info(f"API Key Set: {'Yes' if API_KEY else 'NO - PLEASE SET API_KEY'}")
-        logger.info("="*60)
-
-        if not API_KEY:
-            logger.error("API_KEY not set! Please configure .env file")
-            return
-
+        """Run fetch loop continuously."""
+        logger.info(f"Starting fetcher loop (polling every {POLL_INTERVAL} minutes)")
+        
         # Run immediately on start
         self.run_once()
-
+        
         # Schedule regular runs
         schedule.every(POLL_INTERVAL).minutes.do(self.run_once)
-
-        logger.info(f"Scheduled to run every {POLL_INTERVAL} minutes")
-        logger.info("Press Ctrl+C to stop")
-
+        
         try:
             while True:
                 schedule.run_pending()
                 time.sleep(30)  # Check schedule every 30 seconds
         except KeyboardInterrupt:
-            logger.info("Shutting down...")
+            logger.info("Fetcher stopped by user")
 
-    def get_queue_status(self) -> Dict[str, Any]:
-        """Get current queue status."""
-        def count_jobs(directory: Path) -> int:
-            return len([d for d in directory.iterdir() if d.is_dir()])
 
-        return {
-            'pending': count_jobs(self.pending_dir),
-            'in_progress': count_jobs(self.in_progress_dir),
-            'completed': count_jobs(self.completed_dir),
-            'failed': count_jobs(self.failed_dir),
-            'stats': self.stats
-        }
+# =============================================================================
+# HEALTH CHECK
+# =============================================================================
 
+def health_check() -> bool:
+    """
+    Test connectivity to dashboard API.
+    
+    Returns:
+        True if connection successful
+    """
+    url = f"{DASHBOARD_URL}/api/queue/gui/pending"
+    
+    try:
+        response = safe_request(
+            'GET', url,
+            headers={'X-API-Key': API_KEY},
+            timeout=10
+        )
+        
+        if response.status_code == 200:
+            print(f"[OK] API connection successful")
+            print(f"  URL: {DASHBOARD_URL}")
+            print(f"  Status: {response.status_code}")
+            return True
+        elif response.status_code == 401:
+            print(f"[FAIL] API key invalid or missing")
+            return False
+        else:
+            print(f"[FAIL] Unexpected status: {response.status_code}")
+            return False
+            
+    except SecurityError as e:
+        print(f"[FAIL] Security error: {e}")
+        return False
+    except Exception as e:
+        print(f"[FAIL] Connection failed: {e}")
+        return False
+
+
+# =============================================================================
+# ENTRY POINT
+# =============================================================================
 
 def main():
-    """CLI entry point."""
     parser = argparse.ArgumentParser(
-        description='Social Dashboard Queue Fetcher'
+        description='Social Dashboard Queue Fetcher',
+        epilog='SECURITY: Only accesses social.sterlingcooley.com'
     )
-    parser.add_argument(
-        '--once',
-        action='store_true',
-        help='Run single fetch cycle and exit'
-    )
-    parser.add_argument(
-        '--status',
-        action='store_true',
-        help='Check connection status and exit'
-    )
-    parser.add_argument(
-        '--queue',
-        action='store_true',
-        help='Show queue status and exit'
-    )
-
+    parser.add_argument('--once', action='store_true',
+                        help='Fetch once and exit')
+    parser.add_argument('--health', action='store_true',
+                        help='Test API connectivity')
     args = parser.parse_args()
-
+    
+    if args.health:
+        sys.exit(0 if health_check() else 1)
+    
+    # Verify API key is set
+    if not API_KEY:
+        logger.error("API_KEY not set in environment or .env file")
+        sys.exit(1)
+    
     fetcher = QueueFetcher()
-
-    if args.status:
-        status = fetcher.check_connection()
-        print("\nConnection Status:")
-        print("-" * 40)
-        for key, value in status.items():
-            print(f"  {key}: {value}")
-        sys.exit(0 if status.get('connected') else 1)
-
-    elif args.queue:
-        status = fetcher.get_queue_status()
-        print("\nQueue Status:")
-        print("-" * 40)
-        print(f"  Pending:     {status['pending']}")
-        print(f"  In Progress: {status['in_progress']}")
-        print(f"  Completed:   {status['completed']}")
-        print(f"  Failed:      {status['failed']}")
-        sys.exit(0)
-
-    elif args.once:
-        fetcher.run_once()
-
+    
+    if args.once:
+        count = fetcher.run_once()
+        print(f"Fetched {count} job(s)")
     else:
         fetcher.run_forever()
 
