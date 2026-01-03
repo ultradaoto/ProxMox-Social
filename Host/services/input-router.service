@@ -34,9 +34,9 @@ StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=input-router
 
-# Watchdog
-WatchdogSec=60
-NotifyAccess=all
+# Watchdog disabled - script doesn't send sd_notify
+# WatchdogSec=60
+# NotifyAccess=all
 
 [Install]
 WantedBy=multi-user.target
