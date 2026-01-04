@@ -1,6 +1,6 @@
 /**
- * Content Script - Focus Mode
- * Implements Safe Zones, Blur Overlay, and Spotlight logic
+ * Content Script - Focus Mode & HUD
+ * Implements Safe Zones, Blur Overlay, Spotlight, and Interactive Guides
  */
 
 (function () {
@@ -14,6 +14,11 @@
     let animationFrame = null;
     const SPOTLIGHT_RADIUS = 150;
 
+    // HUD State
+    let activeGuide = null;
+    let currentStepIndex = 0;
+    let hudRunner = null;
+
     // DOM Elements
     let container = null;
     let statusLine = null; // 3px top bar
@@ -26,6 +31,13 @@
 
     // Initialize
     const storage = new StorageManager();
+
+    // Auto-restore state
+    storage.getActiveMode().then(savedMode => {
+        if (savedMode && savedMode !== 'NONE') {
+            setMode(savedMode);
+        }
+    });
 
     // Listen for messages
     chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -42,6 +54,9 @@
             case 'getMode':
                 sendResponse({ mode: mode });
                 return true;
+            case 'startGuide':
+                startGuide(request.guide);
+                break;
         }
 
         sendResponse({ success: true, mode: mode });
@@ -58,10 +73,167 @@
     }, true);
 
     document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape' && mode !== 'NONE') {
-            setMode('NONE');
+        if (e.key === 'Escape') {
+            if (mode !== 'NONE') setMode('NONE');
+            if (hudRunner) stopGuide();
         }
     }, true);
+
+    /* =============================================================================
+       HUD Runner Logic
+       ============================================================================= */
+
+    class HudRunner {
+        constructor(guide, onComplete) {
+            this.guide = guide;
+            this.stepIndex = 0;
+            this.onComplete = onComplete;
+            this.overlay = null;
+            this.tooltip = null;
+            this.highlight = null;
+            this.cleanupStepListener = null;
+        }
+
+        start() {
+            this.renderBaseUI();
+            this.showStep(0);
+        }
+
+        renderBaseUI() {
+            // Container for HUD elements
+            if (!container) setupContainer();
+
+            this.overlay = document.createElement('div');
+            this.overlay.className = 'hud-overlay'; // Dim background
+            container.appendChild(this.overlay);
+
+            this.highlight = document.createElement('div');
+            this.highlight.className = 'hud-highlight'; // Ring/Spotlight
+            container.appendChild(this.highlight);
+
+            this.tooltip = document.createElement('div');
+            this.tooltip.className = 'hud-tooltip';
+            container.appendChild(this.tooltip);
+        }
+
+        async showStep(index) {
+            if (this.cleanupStepListener) this.cleanupStepListener();
+            this.stepIndex = index;
+
+            if (index >= this.guide.steps.length) {
+                this.finish();
+                return;
+            }
+
+            const step = this.guide.steps[index];
+            const target = document.querySelector(step.targetSelector);
+
+            if (!target) {
+                console.warn('[HUD] Target not found:', step.targetSelector);
+                // Auto-skip or show error? For now auto-skip after delay
+                setTimeout(() => this.showStep(index + 1), 1000);
+                return;
+            }
+
+            // Scroll to view
+            target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+            // Update UI
+            this.positionHighlight(target);
+            this.updateTooltip(target, step, index);
+
+            // Listen for Action
+            if (step.action === 'click') {
+                const handler = (e) => {
+                    // Allow the click!
+                    // Verify it's the target
+                    if (e.target.closest(step.targetSelector)) {
+                        // Good!
+                        setTimeout(() => this.showStep(index + 1), 200);
+                    }
+                };
+                document.addEventListener('click', handler, true); // Capture to detect before bubbling?
+                this.cleanupStepListener = () => document.removeEventListener('click', handler, true);
+            } else if (step.action === 'input') {
+                const handler = (e) => {
+                    if (e.target.matches(step.targetSelector)) {
+                        // Advance on blur or delayed input?
+                        // Let's allow typing, advance on 'change' or 'blur'
+                    }
+                };
+                target.addEventListener('change', () => this.showStep(index + 1));
+                // Fallback: Next button in tooltip
+            }
+        }
+
+        positionHighlight(target) {
+            const rect = target.getBoundingClientRect();
+            // We need fixed coordinates
+            this.highlight.style.left = (rect.left - 5) + 'px';
+            this.highlight.style.top = (rect.top - 5) + 'px';
+            this.highlight.style.width = (rect.width + 10) + 'px';
+            this.highlight.style.height = (rect.height + 10) + 'px';
+
+            // Ensure overlay has hole? Or just highlight on top
+            // If we want "Dim everything else", we need masking like Focus Mode.
+            // For now, let's just use a high-z-index ring.
+        }
+
+        updateTooltip(target, step, index) {
+            const rect = target.getBoundingClientRect();
+
+            this.tooltip.innerHTML = `
+                <div class="hud-step-count">Step ${index + 1}/${this.guide.steps.length}</div>
+                <div class="hud-step-text">${step.text}</div>
+                <div class="hud-step-controls">
+                    <button class="hud-btn-skip">Skip</button>
+                    ${step.action !== 'click' ? '<button class="hud-btn-next">Next</button>' : ''}
+                </div>
+            `;
+
+            // Position (Simple logic: Bottom if room, else Top)
+            let top = rect.bottom + 15;
+            let left = rect.left;
+
+            if (top + 150 > window.innerHeight) {
+                top = rect.top - 150; // Go above
+            }
+
+            this.tooltip.style.top = top + 'px';
+            this.tooltip.style.left = left + 'px';
+
+            // Handlers
+            this.tooltip.querySelector('.hud-btn-skip').onclick = () => this.finish();
+            const nextBtn = this.tooltip.querySelector('.hud-btn-next');
+            if (nextBtn) nextBtn.onclick = () => this.showStep(index + 1);
+        }
+
+        finish() {
+            if (this.cleanupStepListener) this.cleanupStepListener();
+            this.overlay.remove();
+            this.highlight.remove();
+            this.tooltip.remove();
+            if (this.onComplete) this.onComplete();
+        }
+    }
+
+    function startGuide(guide) {
+        if (hudRunner) hudRunner.finish();
+        hudRunner = new HudRunner(guide, () => {
+            hudRunner = null;
+            showNotification('Guide Completed! 🎉');
+        });
+        hudRunner.start();
+    }
+
+    function stopGuide() {
+        if (hudRunner) hudRunner.finish();
+        hudRunner = null;
+    }
+
+    /* =============================================================================
+       Existing Logic (Mode Switching, etc)
+       ============================================================================= */
 
     /**
      * Mode Switching
@@ -69,6 +241,10 @@
     async function setMode(newMode) {
         cleanupUI();
         mode = newMode;
+
+        // Save state
+        await storage.setActiveMode(mode);
+
         if (mode === 'NONE') return;
 
         safeElements = await storage.getSafeSelectors();
@@ -82,6 +258,9 @@
     }
 
     function setupContainer() {
+        // Idempotent check
+        if (container) return;
+
         container = document.createElement('div');
         container.className = 'focus-overlay-container';
 
@@ -118,6 +297,10 @@
         document.removeEventListener('mousedown', checkInteractionAllowed, true);
         document.removeEventListener('mouseup', checkInteractionAllowed, true);
         document.removeEventListener('click', checkInteractionAllowed, true);
+
+        // Keep container for HUD if active? No, HUD creates its own elements inside container.
+        // If we switch modes, we generally want to clear everything.
+        if (hudRunner) stopGuide();
 
         if (container) container.remove();
         container = null;

@@ -39,6 +39,44 @@ class StorageManager {
         });
     }
 
+    async getActiveMode() {
+        return new Promise((resolve) => {
+            chrome.runtime.sendMessage({
+                action: 'getActiveMode',
+                hostname: this.hostname
+            }, resolve);
+        });
+    }
+
+    async setActiveMode(mode) {
+        return new Promise((resolve) => {
+            chrome.runtime.sendMessage({
+                action: 'setActiveMode',
+                hostname: this.hostname,
+                mode: mode
+            }, resolve);
+        });
+    }
+
+    async getGuides() {
+        return new Promise((resolve) => {
+            chrome.runtime.sendMessage({
+                action: 'getGuides',
+                hostname: this.hostname
+            }, resolve);
+        });
+    }
+
+    async saveGuide(guide) {
+        return new Promise((resolve) => {
+            chrome.runtime.sendMessage({
+                action: 'saveGuide',
+                hostname: this.hostname,
+                guide
+            }, resolve);
+        });
+    }
+
     async saveColor(color) {
         return new Promise((resolve) => {
             chrome.runtime.sendMessage({

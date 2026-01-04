@@ -80,6 +80,85 @@
   color: #000;
 }
 
+/* =========================================
+   HUD Element Styles
+   ========================================= */
+.hud-highlight {
+  position: absolute;
+  border: 3px solid #3b82f6;
+  /* Blue ring */
+  background: rgba(59, 130, 246, 0.1);
+  border-radius: 4px;
+  pointer-events: none;
+  z-index: 2147483647;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5);
+  /* Dim EVERYTHING else */
+  transition: all 0.3s ease;
+}
+
+.hud-tooltip {
+  position: absolute;
+  background: white;
+  padding: 16px;
+  border-radius: 8px;
+  width: 280px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.2), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+  z-index: 2147483647;
+  font-family: -apple-system, sans-serif;
+  pointer-events: auto;
+  animation: fadeIn 0.3s ease;
+}
+
+.hud-step-count {
+  font-size: 11px;
+  text-transform: uppercase;
+  color: #6b7280;
+  margin-bottom: 4px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+
+.hud-step-text {
+  font-size: 14px;
+  color: #1f2937;
+  margin-bottom: 12px;
+  line-height: 1.4;
+}
+
+.hud-step-controls {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.hud-btn-skip {
+  background: none;
+  border: none;
+  color: #9ca3af;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.hud-btn-skip:hover {
+  color: #6b7280;
+}
+
+.hud-btn-next {
+  background: #3b82f6;
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.hud-btn-next:hover {
+  background: #2563eb;
+}
+
 @keyframes slideUp {
   from {
     transform: translateY(20px);
@@ -89,6 +168,18 @@
   to {
     transform: translateY(0);
     opacity: 1;
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 
