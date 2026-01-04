@@ -6,7 +6,7 @@ Automated social media posting system for Windows 10. Bridges your Social Dashbo
 
 ```
 Sterling's Social Dashboard          Windows 10 Worker
-(sterlingcooley.com/social)         (This Machine)
+(social.sterlingcooley.com)          (This Machine)
         │                                   │
         │  POST /api/queue/pending          │
         │ ◄─────────────────────────────────┤  Queue Fetcher

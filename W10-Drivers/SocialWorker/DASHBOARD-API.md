@@ -1,6 +1,6 @@
 # Dashboard API Specification
 
-This document specifies the API endpoints that need to be implemented on your Social Dashboard (sterlingcooley.com/social) for the Windows Social Worker to function.
+This document specifies the API endpoints that need to be implemented on your Social Dashboard (social.sterlingcooley.com) for the Windows Social Worker to function.
 
 ## Authentication
 
@@ -25,7 +25,7 @@ Returns posts scheduled for GUI automation that are due for posting.
 **Request:**
 ```http
 GET /api/queue/pending HTTP/1.1
-Host: sterlingcooley.com
+Host: social.sterlingcooley.com
 X-API-Key: your-secret-key
 ```
 
@@ -74,7 +74,7 @@ Downloads a media file for posting.
 **Request:**
 ```http
 GET /api/queue/media/media_001 HTTP/1.1
-Host: sterlingcooley.com
+Host: social.sterlingcooley.com
 X-API-Key: your-secret-key
 ```
 
@@ -97,7 +97,7 @@ Marks a post as successfully published.
 **Request:**
 ```http
 POST /api/queue/complete HTTP/1.1
-Host: sterlingcooley.com
+Host: social.sterlingcooley.com
 X-API-Key: your-secret-key
 Content-Type: application/json
 
@@ -135,7 +135,7 @@ Marks a post as failed with error details.
 **Request:**
 ```http
 POST /api/queue/failed HTTP/1.1
-Host: sterlingcooley.com
+Host: social.sterlingcooley.com
 X-API-Key: your-secret-key
 Content-Type: application/json
 
@@ -176,7 +176,7 @@ Get current status of a specific post.
 **Request:**
 ```http
 GET /api/queue/status/post_abc123 HTTP/1.1
-Host: sterlingcooley.com
+Host: social.sterlingcooley.com
 X-API-Key: your-secret-key
 ```
 
@@ -334,12 +334,12 @@ After implementing, test with curl:
 
 ```bash
 # Check pending posts
-curl -H "X-API-Key: your-key" https://sterlingcooley.com/api/queue/pending
+curl -H "X-API-Key: your-key" https://social.sterlingcooley.com/api/queue/pending
 
 # Mark a post complete
 curl -X POST -H "X-API-Key: your-key" -H "Content-Type: application/json" \
   -d '{"id": "test_123"}' \
-  https://sterlingcooley.com/api/queue/complete
+  https://social.sterlingcooley.com/api/queue/complete
 ```
 
 Or use the healthcheck on Windows:

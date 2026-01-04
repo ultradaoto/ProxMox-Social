@@ -26,7 +26,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Configuration
-DASHBOARD_URL = os.getenv('DASHBOARD_URL', 'https://sterlingcooley.com')
+DASHBOARD_URL = os.getenv('DASHBOARD_URL', 'https://social.sterlingcooley.com')
 API_KEY = os.getenv('API_KEY', '')
 QUEUE_DIR = Path(os.getenv('QUEUE_DIR', 'C:/PostQueue'))
 
