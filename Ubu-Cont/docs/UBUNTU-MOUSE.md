@@ -17,8 +17,8 @@ The Windows VM uses **absolute coordinates** via the QEMU HID Tablet device.
 
 | Parameter | Value |
 |-----------|-------|
-| Screen Resolution | 1280 x 800 |
-| Coordinate Range | 0-1279 (X), 0-799 (Y) |
+| Screen Resolution | 1600 x 1200 |
+| Coordinate Range | 0-1599 (X), 0-1199 (Y) |
 | Origin | Top-left corner (0, 0) |
 
 The host automatically converts screen coordinates to QMP absolute coordinates (0-32767 range).
@@ -98,8 +98,8 @@ class MouseSender:
         self.host = host
         self.port = port
         self.sock = None
-        self.screen_width = 1280
-        self.screen_height = 800
+        self.screen_width = 1600
+        self.screen_height = 1200
 
     def connect(self):
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -252,21 +252,21 @@ echo '{"type":"scroll","delta":-3}' | nc 192.168.100.1 8888
 } | nc 192.168.100.1 8888
 ```
 
-## Common Screen Locations (1280x800)
+## Common Screen Locations (1600x1200)
 
 | Location | Coordinates | Description |
 |----------|-------------|-------------|
-| Center | (640, 400) | Screen center |
+| Center | (800, 600) | Screen center |
 | Top-left | (0, 0) | Origin |
-| Top-right | (1279, 0) | |
-| Bottom-left | (0, 799) | |
-| Bottom-right | (1279, 799) | |
-| Taskbar (center) | (640, 780) | Windows taskbar |
-| Start button | (20, 780) | Windows Start |
-| System tray | (1200, 780) | Notification area |
-| Close button | (1260, 10) | Window close (maximized) |
-| Minimize button | (1200, 10) | Window minimize |
-| Maximize button | (1230, 10) | Window maximize |
+| Top-right | (1599, 0) | |
+| Bottom-left | (0, 1199) | |
+| Bottom-right | (1599, 1199) | |
+| Taskbar (center) | (800, 1180) | Windows taskbar |
+| Start button | (20, 1180) | Windows Start |
+| System tray | (1520, 1180) | Notification area |
+| Close button | (1580, 10) | Window close (maximized) |
+| Minimize button | (1520, 10) | Window minimize |
+| Maximize button | (1550, 10) | Window maximize |
 
 ## Human-Like Movement
 
@@ -379,16 +379,16 @@ Common issues:
 The host converts screen coordinates to QMP absolute coordinates:
 
 ```
-qmp_x = (screen_x / 1280) * 32767
-qmp_y = (screen_y / 800) * 32767
+qmp_x = (screen_x / 1600) * 32767
+qmp_y = (screen_y / 1200) * 32767
 ```
 
 | Screen Position | QMP Coordinates |
 |-----------------|-----------------|
 | (0, 0) | (0, 0) |
-| (640, 400) | (16383, 16383) |
-| (1280, 800) | (32767, 32767) |
-| (100, 200) | (2559, 8191) |
+| (800, 600) | (16383, 16383) |
+| (1600, 1200) | (32767, 32767) |
+| (100, 200) | (2047, 5461) |
 
 ## Integration with Vision AI
 
