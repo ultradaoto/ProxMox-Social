@@ -9,7 +9,7 @@ import random
 import math
 import threading
 from datetime import datetime
-from human_mouse import MouseController as HumanMouse
+from human_mouse import HumanMouse
 
 class VirtualMouseController:
     def __init__(self, host='192.168.100.1', port=8888):
@@ -43,19 +43,16 @@ class VirtualMouseController:
         dist = math.hypot(target_x - self.current_x, target_y - self.current_y)
         steps = max(5, int(dist / 5)) # 5px steps approximately
         
-        # Generate human-like trajectory using private API of human_mouse 0.1.2
+        # Generate human-like trajectory using HumanMouse
         try:
-            xs, ys = self.mouse._generate_path_coordinates(
-                nodes=steps, 
-                target_x=int(target_x), 
-                target_y=int(target_y), 
-                start_x=int(self.current_x), 
-                start_y=int(self.current_y)
-            )
-            trajectory = zip(xs, ys)
+            start = (int(self.current_x), int(self.current_y))
+            end = (int(target_x), int(target_y))
+            # generate_trajectory returns (x, y, timestamp)
+            points = self.mouse.generate_trajectory(start, end)
+            trajectory = [(p[0], p[1]) for p in points]
         except Exception as e:
             print(f"Error generating trajectory: {e}")
-            # Fallback to direct move or linear interpolation
+            # Fallback to direct move
             trajectory = [(target_x, target_y)]
 
         # Send movement commands
@@ -108,9 +105,9 @@ class VirtualMouseController:
             time.sleep(random.uniform(0.01, 0.03))
     
     def _send_mouse_move(self, x, y):
-        """Send movement command to virtual device"""
+        """Send movement command to virtual device (Absolute Positioning)"""
         cmd = {
-            'type': 'mouse_move',
+            'type': 'abs',
             'x': int(x),
             'y': int(y),
             'timestamp': datetime.now().isoformat()

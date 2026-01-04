@@ -8,6 +8,9 @@ FOLDER 2: UBU-CONT (Ubuntu AI Controller VM)
 Purpose
 Ubuntu VM that runs computer vision AI and controls the virtual mouse/keyboard.
 
+> [!IMPORTANT]
+> **Update 12/29/2025**: We are currently opting to use **API calls (OpenRouter)** for AI vision and decision making instead of running local models (Ollama/OmniParser). This simplifies deployment and reduces local resource usage. Local model instructions below are kept for reference but are optional.
+
 Prerequisites
 Ubuntu 22.04 LTS VM
 
@@ -486,11 +489,9 @@ json
         "port": 8889
     },
     "vision": {
-        "model_path": "OmniParser/omniparser_v2.pt",
-        "confidence_threshold": 0.7,
-        "use_ollama": true,
-        "ollama_model": "qwen2.5-vl:7b",
-        "ollama_host": "http://localhost:11434"
+        "api_key": "sk-or-your-actual-api-key-here",
+        "model_name": "qwen/qwen-2.5-vl-72b-instruct",
+        "confidence_threshold": 0.05
     },
     "behavior": {
         "min_think_time": 0.5,
