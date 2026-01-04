@@ -6,3 +6,4 @@ pygetwindow>=0.0.9
 pywin32>=306
 schedule>=1.2.0
 python-dotenv>=1.0.0
+websockets>=12.0
