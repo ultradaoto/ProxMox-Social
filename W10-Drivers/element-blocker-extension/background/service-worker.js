@@ -138,58 +138,59 @@ async function setActiveMode(hostname, mode) {
     sites[hostname].settings.activeMode = mode;
     await chrome.storage.local.set({ sites });
     return { success: true };
+}
 
-    // Storage functions
-    async function getSafeElements(hostname) {
-        const result = await chrome.storage.local.get(['sites']);
-        const sites = result.sites || {};
-        return sites[hostname]?.safeElements || [];
+// Storage functions
+async function getSafeElements(hostname) {
+    const result = await chrome.storage.local.get(['sites']);
+    const sites = result.sites || {};
+    return sites[hostname]?.safeElements || [];
+}
+
+async function toggleSafeElement(hostname, selector, description) {
+    const result = await chrome.storage.local.get(['sites']);
+    const sites = result.sites || {};
+
+    if (!sites[hostname]) {
+        sites[hostname] = { safeElements: [], settings: {} };
     }
 
-    async function toggleSafeElement(hostname, selector, description) {
-        const result = await chrome.storage.local.get(['sites']);
-        const sites = result.sites || {};
+    // Check if already safe
+    const index = sites[hostname].safeElements.findIndex(
+        el => el.selector === selector
+    );
 
-        if (!sites[hostname]) {
-            sites[hostname] = { safeElements: [], settings: {} };
-        }
-
-        // Check if already safe
-        const index = sites[hostname].safeElements.findIndex(
-            el => el.selector === selector
-        );
-
-        if (index >= 0) {
-            // Remove if exists (toggle off)
-            sites[hostname].safeElements.splice(index, 1);
-        } else {
-            // Add if new (toggle on)
-            sites[hostname].safeElements.push({
-                selector,
-                description,
-                createdAt: new Date().toISOString(),
-                enabled: true
-            });
-        }
-
-        await chrome.storage.local.set({ sites });
-        return { success: true, isSafe: index < 0 };
+    if (index >= 0) {
+        // Remove if exists (toggle off)
+        sites[hostname].safeElements.splice(index, 1);
+    } else {
+        // Add if new (toggle on)
+        sites[hostname].safeElements.push({
+            selector,
+            description,
+            createdAt: new Date().toISOString(),
+            enabled: true
+        });
     }
 
-    async function getColorHistory() {
-        const result = await chrome.storage.local.get(['colorHistory']);
-        return result.colorHistory || [];
-    }
+    await chrome.storage.local.set({ sites });
+    return { success: true, isSafe: index < 0 };
+}
 
-    async function saveColor(color) {
-        const result = await chrome.storage.local.get(['colorHistory']);
-        let history = result.colorHistory || [];
+async function getColorHistory() {
+    const result = await chrome.storage.local.get(['colorHistory']);
+    return result.colorHistory || [];
+}
 
-        // Add to front, remove duplicates, limit to 50
-        history = history.filter(c => c.hex !== color.hex);
-        history.unshift(color);
-        history = history.slice(0, 50);
+async function saveColor(color) {
+    const result = await chrome.storage.local.get(['colorHistory']);
+    let history = result.colorHistory || [];
 
-        await chrome.storage.local.set({ colorHistory: history });
-        return { success: true };
-    }
+    // Add to front, remove duplicates, limit to 50
+    history = history.filter(c => c.hex !== color.hex);
+    history.unshift(color);
+    history = history.slice(0, 50);
+
+    await chrome.storage.local.set({ colorHistory: history });
+    return { success: true };
+}
