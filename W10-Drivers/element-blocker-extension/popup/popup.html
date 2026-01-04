@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="UTF-8">
+  <link rel="stylesheet" href="popup.css">
+</head>
+
+<body>
+  <div class="popup-container">
+    <header class="popup-header">
+      <h1>🎯 Focus Mode</h1>
+      <span class="site-badge" id="current-site"></span>
+    </header>
+
+    <div class="button-group">
+      <button id="focus-mode-btn" class="primary-btn btn-green">
+        ▶️ Start Focus
+      </button>
+      <button id="edit-mode-btn" class="primary-btn btn-orange">
+        ✏️ Edit Safe Zones
+      </button>
+    </div>
+
+    <section class="section">
+      <h2>Safe Zones (Always Visible)</h2>
+      <div id="safe-list" class="blocked-list">
+        <p class="empty-state">No safe zones yet. Use "Edit Safe Zones" to add some!</p>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Tools</h2>
+      <button id="color-mode-btn" class="secondary-btn">
+        🎨 Color Picker
+      </button>
+    </section>
+
+    <div id="color-history-section" style="display:none; margin-top: 16px;">
+      <div id="color-history" class="color-grid"></div>
+    </div>
+
+    <footer class="popup-footer">
+      <a href="#" id="options-link">⚙️ Settings</a>
+      <span class="version">v2.0.0</span>
+    </footer>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+
+</html>

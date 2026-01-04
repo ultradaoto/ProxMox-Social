@@ -1,0 +1,235 @@
+/* Focus Mode & Color Picker Styles */
+
+.focus-overlay-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 2147483646;
+  pointer-events: none;
+}
+
+/* =========================================
+   STATUS LINE (3px Top Bar)
+   ========================================= */
+.focus-status-line {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: #10b981;
+  /* Green by default */
+  z-index: 2147483647;
+  pointer-events: none;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+}
+
+.focus-status-line.edit-mode {
+  background: #ef4444;
+  /* Red for edit mode */
+}
+
+/* =========================================
+   FLOATING CONTROLS (Pill)
+   ========================================= */
+.focus-controls-pill {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  /* Move to bottom right to avoid blocking top headers */
+  background: white;
+  border-radius: 999px;
+  padding: 8px 16px;
+  z-index: 2147483647;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  font-family: -apple-system, system-ui, sans-serif;
+  pointer-events: auto;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.focus-pill-label {
+  font-weight: 600;
+  font-size: 13px;
+  color: #333;
+}
+
+.focus-pill-close {
+  background: #f3f4f6;
+  border: none;
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: #666;
+  font-size: 14px;
+  padding: 0;
+  transition: all 0.2s;
+}
+
+.focus-pill-close:hover {
+  background: #e5e7eb;
+  color: #000;
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* =========================================
+   Run Mode (Focus Mode)
+   ========================================= */
+
+.focus-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 0, 0, 0.10);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  mask-repeat: no-repeat;
+  -webkit-mask-repeat: no-repeat;
+  pointer-events: none;
+}
+
+/* =========================================
+   Edit Mode
+   ========================================= */
+
+.edit-mode-overlay-bg {
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 0, 0, 0.15);
+  pointer-events: none;
+}
+
+/* DEBUG TOOLTIP */
+.focus-debug-tooltip {
+  position: fixed;
+  background: rgba(0, 0, 0, 0.85);
+  color: #fff;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  pointer-events: none;
+  z-index: 2147483647;
+  white-space: nowrap;
+  font-family: monospace;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  transform: translate(10px, 10px);
+}
+
+/* HIGHLIGHTS */
+
+.safe-zone-highlight {
+  position: absolute;
+  background: rgba(16, 185, 129, 0.2);
+  border: 2px solid #10b981;
+  pointer-events: none;
+  z-index: 20;
+}
+
+.unsafe-hover-highlight {
+  position: absolute;
+  background: rgba(255, 0, 0, 0.1);
+  border: 2px dashed #ef4444;
+  pointer-events: none;
+  z-index: 25;
+}
+
+.safe-hover-highlight {
+  position: absolute;
+  background: rgba(16, 185, 129, 0.4);
+  border: 2px dashed #10b981;
+  pointer-events: none;
+  z-index: 25;
+}
+
+.safe-hover-label {
+  position: absolute;
+  top: -24px;
+  left: 0;
+  background: #10b981;
+  color: white;
+  padding: 2px 6px;
+  font-size: 10px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.unsafe-hover-label {
+  position: absolute;
+  top: -24px;
+  left: 0;
+  background: #ef4444;
+  color: white;
+  padding: 2px 6px;
+  font-size: 10px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+/* =========================================
+   Notifications
+   ========================================= */
+
+.focus-notification {
+  position: fixed;
+  bottom: 80px;
+  /* Above controls pill */
+  right: 24px;
+  padding: 12px 20px;
+  border-radius: 8px;
+  color: white;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  z-index: 2147483647;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  animation: slideIn 0.3s ease, fadeOut 0.3s ease 1.7s forwards;
+}
+
+.notification-success {
+  background: #10b981;
+}
+
+.notification-removed {
+  background: #ef4444;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes fadeOut {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
