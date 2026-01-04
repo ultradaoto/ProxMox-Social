@@ -4,6 +4,9 @@ Social Dashboard Queue Fetcher for Windows 10
 Downloads pending posts from social.sterlingcooley.com and saves them
 to C:\PostQueue\pending\ for the Ubuntu Poster to process.
 
+Also monitors C:\PostQueue\completed and C:\PostQueue\failed to sync
+status back to the API.
+
 SECURITY: This script can ONLY access social.sterlingcooley.com
           No other domains are permitted.
 """
@@ -11,6 +14,7 @@ import os
 import sys
 import json
 import time
+import shutil
 import logging
 import argparse
 from pathlib import Path
@@ -92,12 +96,17 @@ logger = logging.getLogger('fetcher')
 class QueueFetcher:
     """
     Fetches pending posts from Social Dashboard API.
-    Downloads media and creates job folders for the Poster.
+    Syncs completed/failed jobs back to API.
     """
     
     def __init__(self):
         self.pending_dir = QUEUE_DIR / 'pending'
-        self.pending_dir.mkdir(parents=True, exist_ok=True)
+        self.completed_dir = QUEUE_DIR / 'completed'
+        self.failed_dir = QUEUE_DIR / 'failed'
+        self.archived_dir = QUEUE_DIR / 'archived'
+        
+        for d in [self.pending_dir, self.completed_dir, self.failed_dir, self.archived_dir]:
+            d.mkdir(parents=True, exist_ok=True)
         
         # Verify dashboard URL is allowed
         if not is_allowed_url(DASHBOARD_URL):
@@ -114,100 +123,69 @@ class QueueFetcher:
             'Content-Type': 'application/json',
         }
     
+    # -------------------------------------------------------------------------
+    # FETCHING LOGIC
+    # -------------------------------------------------------------------------
+
     def fetch_pending_posts(self) -> List[Dict[str, Any]]:
-        """
-        Fetch list of pending posts from dashboard API.
-        
-        Returns:
-            List of post dictionaries
-        """
+        """Fetch list of pending posts from dashboard API."""
         url = f"{DASHBOARD_URL}/api/queue/gui/pending"
         
         try:
             response = safe_request('GET', url, headers=self._get_headers(), timeout=30)
             response.raise_for_status()
-            
-            posts = response.json()
-            logger.info(f"Fetched {len(posts)} pending post(s)")
-            return posts
-            
+            return response.json()
         except SecurityError:
             raise
-        except requests.exceptions.RequestException as e:
+        except Exception as e:
             logger.error(f"Failed to fetch pending posts: {e}")
             return []
     
     def download_media(self, media_id: str, save_path: Path) -> bool:
-        """
-        Download a media file from the dashboard.
-        
-        Args:
-            media_id: Media ID from the post
-            save_path: Local path to save the file
-            
-        Returns:
-            True if successful
-        """
+        """Download a media file from the dashboard."""
         url = f"{DASHBOARD_URL}/api/queue/gui/media/{media_id}"
         
         try:
             response = safe_request(
-                'GET', url,
-                headers=self._get_headers(),
-                timeout=120,  # Longer timeout for large files
-                stream=True
+                'GET', url, headers=self._get_headers(),
+                timeout=120, stream=True
             )
             response.raise_for_status()
             
-            # Write file in chunks
             with open(save_path, 'wb') as f:
                 for chunk in response.iter_content(chunk_size=8192):
                     if chunk:
                         f.write(chunk)
-            
-            logger.info(f"Downloaded media: {save_path.name} ({save_path.stat().st_size} bytes)")
             return True
-            
-        except SecurityError:
-            raise
         except Exception as e:
             logger.error(f"Failed to download media {media_id}: {e}")
             return False
     
     def job_exists(self, post_id: str) -> bool:
         """Check if a job already exists for this post (in any state)."""
-        for state_dir in ['pending', 'in_progress', 'completed', 'failed']:
-            state_path = QUEUE_DIR / state_dir
-            if state_path.exists():
-                for job_dir in state_path.iterdir():
+        # Check active folders
+        for state_dir in [self.pending_dir, self.completed_dir, self.failed_dir]:
+            if state_dir.exists():
+                for job_dir in state_dir.iterdir():
                     if job_dir.is_dir() and post_id in job_dir.name:
                         return True
+        # Check archive (optional, but good to prevent reprocessing old jobs)
+        if self.archived_dir.exists():
+             for sub in ['completed', 'failed']:
+                 sub_dir = self.archived_dir / sub
+                 if sub_dir.exists():
+                    for job_dir in sub_dir.iterdir():
+                        if job_dir.is_dir() and post_id in job_dir.name:
+                            return True
         return False
     
     def create_job(self, post: Dict[str, Any]) -> bool:
-        """
-        Create a job folder for a pending post.
-        
-        Structure:
-            C:\PostQueue\pending\job_{timestamp}_{id}\
-                job.json       - All post metadata
-                media_1.jpg    - Downloaded image
-                media_2.mp4    - Downloaded video (if any)
-        
-        Args:
-            post: Post dictionary from API
-            
-        Returns:
-            True if job created successfully
-        """
+        """Create a job folder for a pending post."""
         post_id = post.get('id', 'unknown')
         
-        # Check for duplicates
         if self.job_exists(post_id):
-            logger.debug(f"Job already exists for post {post_id}, skipping")
             return False
         
-        # Create job folder
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         job_id = f"job_{timestamp}_{post_id}"
         job_dir = self.pending_dir / job_id
@@ -215,7 +193,6 @@ class QueueFetcher:
         try:
             job_dir.mkdir(parents=True, exist_ok=True)
             
-            # Download media files
             media_files = []
             for i, media in enumerate(post.get('media', [])):
                 media_id = media.get('id')
@@ -231,27 +208,23 @@ class QueueFetcher:
                         'original_filename': filename,
                     })
                 else:
-                    # Failed to download - cleanup and abort
                     logger.error(f"Failed to download media for job {job_id}")
-                    self._cleanup_job(job_dir)
+                    shutil.rmtree(job_dir)
                     return False
             
-            # Write job.json
-            job_data = {
-                'id': post_id,
+            # Start with full API data to preserve all fields
+            job_data = post.copy()
+            
+            # Update with local processing details
+            job_data.update({
                 'job_id': job_id,
-                'platform': post.get('platform', ''),
-                'scheduled_time': post.get('scheduled_time', ''),
-                'caption': post.get('caption', ''),
-                'media': media_files,
-                'link': post.get('link'),
+                'media': media_files, # Overwrite media with local paths
                 'status': 'pending',
                 'created_at': datetime.now().isoformat(),
                 'fetched_from': DASHBOARD_URL,
-            }
+            })
             
-            job_file = job_dir / 'job.json'
-            with open(job_file, 'w', encoding='utf-8') as f:
+            with open(job_dir / 'job.json', 'w', encoding='utf-8') as f:
                 json.dump(job_data, f, indent=2, ensure_ascii=False)
             
             logger.info(f"Created job: {job_id} ({post.get('platform')})")
@@ -259,38 +232,130 @@ class QueueFetcher:
             
         except Exception as e:
             logger.exception(f"Failed to create job for {post_id}: {e}")
-            self._cleanup_job(job_dir)
-            return False
-    
-    def _cleanup_job(self, job_dir: Path):
-        """Remove a partially created job folder."""
-        try:
             if job_dir.exists():
-                import shutil
                 shutil.rmtree(job_dir)
-        except Exception as e:
-            logger.error(f"Failed to cleanup job folder: {e}")
+            return False
+
+    # -------------------------------------------------------------------------
+    # SYNCING LOGIC
+    # -------------------------------------------------------------------------
+
+    def sync_completed_jobs(self):
+        """Process jobs in the completed directory."""
+        if not self.completed_dir.exists():
+            return
+
+        for job_dir in self.completed_dir.iterdir():
+            if not job_dir.is_dir():
+                continue
+            
+            try:
+                # Read ID
+                job_json = job_dir / 'job.json'
+                if not job_json.exists():
+                    logger.warning(f"No job.json found in {job_dir}")
+                    continue
+                    
+                with open(job_json, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                
+                post_id = data.get('id')
+                if not post_id:
+                    continue
+
+                # Notify API
+                logger.info(f"Syncing completion for job {job_dir.name}...")
+                url = f"{DASHBOARD_URL}/api/queue/gui/{post_id}/complete"
+                response = safe_request('POST', url, headers=self._get_headers(), timeout=30)
+                
+                if response.status_code in [200, 201, 204]:
+                    self._archive_job(job_dir, 'completed')
+                    logger.info(f"Synced & archived: {job_dir.name}")
+                else:
+                    logger.error(f"Failed to sync completion for {post_id}: {response.status_code} {response.text}")
+
+            except Exception as e:
+                logger.error(f"Error processing completed job {job_dir.name}: {e}")
+
+    def sync_failed_jobs(self):
+        """Process jobs in the failed directory."""
+        if not self.failed_dir.exists():
+            return
+
+        for job_dir in self.failed_dir.iterdir():
+            if not job_dir.is_dir():
+                continue
+            
+            try:
+                # Read ID
+                job_json = job_dir / 'job.json'
+                if not job_json.exists():
+                    continue
+                    
+                with open(job_json, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                
+                post_id = data.get('id')
+                
+                # Read Reason
+                reason = "Unknown failure"
+                reason_file = job_dir / 'failure_reason.txt'
+                if reason_file.exists():
+                    with open(reason_file, 'r', encoding='utf-8') as f:
+                        reason = f.read().strip()
+
+                # Notify API
+                logger.info(f"Syncing failure for job {job_dir.name}...")
+                url = f"{DASHBOARD_URL}/api/queue/gui/{post_id}/failed"
+                payload = {'reason': reason}
+                
+                response = safe_request('POST', url, headers=self._get_headers(), json=payload, timeout=30)
+                
+                if response.status_code in [200, 201, 204]:
+                    self._archive_job(job_dir, 'failed')
+                    logger.info(f"Synced & archived: {job_dir.name}")
+                else:
+                    logger.error(f"Failed to sync failure for {post_id}: {response.status_code}")
+
+            except Exception as e:
+                logger.error(f"Error processing failed job {job_dir.name}: {e}")
+
+    def _archive_job(self, job_dir: Path, status_subdir: str):
+        """Move job to archive."""
+        target_dir = self.archived_dir / status_subdir
+        target_dir.mkdir(parents=True, exist_ok=True)
+        
+        target_path = target_dir / job_dir.name
+        if target_path.exists():
+            shutil.rmtree(target_path)
+            
+        shutil.move(str(job_dir), str(target_path))
+
+    # -------------------------------------------------------------------------
+    # RUN LOOP
+    # -------------------------------------------------------------------------
     
     def run_once(self) -> int:
-        """
-        Single fetch cycle.
+        """Single fetch and sync cycle."""
+        logger.info("--- Cycle Start ---")
         
-        Returns:
-            Number of jobs created
-        """
-        logger.info("Checking for pending posts...")
+        # 1. Sync local status to API
+        self.sync_completed_jobs()
+        self.sync_failed_jobs()
         
+        # 2. Fetch new posts
         posts = self.fetch_pending_posts()
-        if not posts:
-            logger.info("No pending posts")
-            return 0
-        
         created = 0
-        for post in posts:
-            if self.create_job(post):
-                created += 1
-        
-        logger.info(f"Created {created} new job(s)")
+        if posts:
+            for post in posts:
+                if self.create_job(post):
+                    created += 1
+            if created > 0:
+                logger.info(f"Created {created} new job(s)")
+        else:
+            logger.info("No new pending posts")
+            
+        logger.info("--- Cycle End ---")
         return created
     
     def run_forever(self):
@@ -306,7 +371,7 @@ class QueueFetcher:
         try:
             while True:
                 schedule.run_pending()
-                time.sleep(30)  # Check schedule every 30 seconds
+                time.sleep(30)
         except KeyboardInterrupt:
             logger.info("Fetcher stopped by user")
 
@@ -316,38 +381,18 @@ class QueueFetcher:
 # =============================================================================
 
 def health_check() -> bool:
-    """
-    Test connectivity to dashboard API.
-    
-    Returns:
-        True if connection successful
-    """
+    """Test connectivity to dashboard API."""
     url = f"{DASHBOARD_URL}/api/queue/gui/pending"
-    
     try:
-        response = safe_request(
-            'GET', url,
-            headers={'X-API-Key': API_KEY},
-            timeout=10
-        )
-        
+        response = safe_request('GET', url, headers={'X-API-Key': API_KEY}, timeout=10)
         if response.status_code == 200:
-            print(f"[OK] API connection successful")
-            print(f"  URL: {DASHBOARD_URL}")
-            print(f"  Status: {response.status_code}")
+            print(f"[OK] API connection successful: {DASHBOARD_URL}")
             return True
-        elif response.status_code == 401:
-            print(f"[FAIL] API key invalid or missing")
-            return False
         else:
-            print(f"[FAIL] Unexpected status: {response.status_code}")
+            print(f"[FAIL] Connection failed: {response.status_code}")
             return False
-            
-    except SecurityError as e:
-        print(f"[FAIL] Security error: {e}")
-        return False
     except Exception as e:
-        print(f"[FAIL] Connection failed: {e}")
+        print(f"[FAIL] Error: {e}")
         return False
 
 
@@ -356,29 +401,22 @@ def health_check() -> bool:
 # =============================================================================
 
 def main():
-    parser = argparse.ArgumentParser(
-        description='Social Dashboard Queue Fetcher',
-        epilog='SECURITY: Only accesses social.sterlingcooley.com'
-    )
-    parser.add_argument('--once', action='store_true',
-                        help='Fetch once and exit')
-    parser.add_argument('--health', action='store_true',
-                        help='Test API connectivity')
+    parser = argparse.ArgumentParser(description='Social Dashboard Queue Fetcher')
+    parser.add_argument('--once', action='store_true', help='Fetch once and exit')
+    parser.add_argument('--health', action='store_true', help='Test API connectivity')
     args = parser.parse_args()
     
     if args.health:
         sys.exit(0 if health_check() else 1)
     
-    # Verify API key is set
     if not API_KEY:
-        logger.error("API_KEY not set in environment or .env file")
+        logger.error("API_KEY not set")
         sys.exit(1)
     
     fetcher = QueueFetcher()
     
     if args.once:
-        count = fetcher.run_once()
-        print(f"Fetched {count} job(s)")
+        fetcher.run_once()
     else:
         fetcher.run_forever()
 

@@ -1,3 +1,8 @@
+PyQt6>=6.5.0
 requests>=2.31.0
+Pillow>=10.0.0
+pyperclip>=1.8.2
+pygetwindow>=0.0.9
+pywin32>=306
 schedule>=1.2.0
 python-dotenv>=1.0.0
