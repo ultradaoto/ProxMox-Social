@@ -92,6 +92,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
     if (message.target === 'background' || message.action === 'OSP_SEND') {
         sendToOSP(message.type, message.payload);
+
+        // If it's a recording command, also forward to current tab immediately
+        // so we don't depend on Python echoing it back yet.
+        if (message.type === 'start_recording' || message.type === 'stop_recording') {
+            chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+                if (tabs[0]) {
+                    chrome.tabs.sendMessage(tabs[0].id, {
+                        action: 'OSP_MESSAGE',
+                        ospType: message.type,
+                        payload: message.payload
+                    }).catch(() => { });
+                }
+            });
+        }
         return false;
     }
     // Don't return true unless we sendResponse asynchronously, which we don't here

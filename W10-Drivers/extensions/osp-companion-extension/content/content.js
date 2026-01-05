@@ -8,12 +8,42 @@
     let highlightedElement = null;
     let highlightOverlay = null;
 
+    let isRecording = false;
+
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         if (message.action === 'OSP_MESSAGE') {
             const { ospType, payload } = message;
             handleOSPMessage(ospType, payload);
         }
     });
+
+    // Toggle Recording Mode
+    function toggleRecording(enabled) {
+        if (isRecording === enabled) return;
+        isRecording = enabled;
+        console.log(`[OSP] Recording Mode: ${enabled ? 'ON' : 'OFF'}`);
+
+        if (isRecording) {
+            document.addEventListener('click', onGlobalClick, true);
+        } else {
+            document.removeEventListener('click', onGlobalClick, true);
+        }
+    }
+
+    function onGlobalClick(event) {
+        if (!isRecording) return;
+        // Don't report clicks on our own overlay
+        if (event.target.closest('.osp-highlight-overlay')) return;
+
+        sendToBackground('interaction_recorded', {
+            type: 'click',
+            selector: getSelector(event.target),
+            element_type: event.target.tagName.toLowerCase(),
+            x: event.clientX,
+            y: event.clientY,
+            timestamp: Date.now()
+        });
+    }
 
     let lastHighlightTime = 0;
     let lastHighlightSelector = '';
@@ -34,6 +64,12 @@
                 break;
             case 'clear_highlights':
                 clearHighlights();
+                break;
+            case 'start_recording':
+                toggleRecording(true);
+                break;
+            case 'stop_recording':
+                toggleRecording(false);
                 break;
         }
     }
@@ -159,13 +195,73 @@
     });
 
     function getSelector(element) {
-        if (element.id) return '#' + element.id;
-        if (element.getAttribute('data-placeholder')) return `[data-placeholder='${element.getAttribute('data-placeholder')}']`;
-        if (element.className && typeof element.className === 'string') {
-            const classes = element.className.split(' ').filter(c => c).slice(0, 2);
-            if (classes.length) return '.' + classes.join('.');
+        // 1. ID
+        if (element.id) return '#' + CSS.escape(element.id);
+
+        // 2. Important Attributes
+        const attributes = ['name', 'placeholder', 'aria-label', 'data-testid', 'data-id', 'role'];
+        for (const attr of attributes) {
+            if (element.hasAttribute(attr)) {
+                const val = element.getAttribute(attr);
+                // Ensure value isn't too long or crazy
+                if (val && val.length < 50) {
+                    const selector = `[${attr}='${CSS.escape(val)}']`;
+                    if (document.querySelectorAll(selector).length === 1) return selector;
+                    // Try combining with tag if not unique
+                    const tagSelector = `${element.tagName.toLowerCase()}${selector}`;
+                    if (document.querySelectorAll(tagSelector).length === 1) return tagSelector;
+                }
+            }
         }
-        return element.tagName.toLowerCase();
+
+        // 3. Unique Text Content (for buttons/labels/spans)
+        if (['BUTTON', 'A', 'LABEL', 'SPAN', 'DIV'].includes(element.tagName) && element.innerText.trim().length > 0 && element.innerText.trim().length < 30) {
+            // This is tricky for CSS selectors, better to use XPath or :contains (not standard).
+            // We'll stick to CSS structure for now, but keeping text in mind for future.
+        }
+
+        // 4. Classes (careful of generic Tailwind/Utility classes)
+        if (element.className && typeof element.className === 'string') {
+            const classes = element.className.trim().split(/\s+/);
+            // Try single classes first
+            for (const cls of classes) {
+                if (!cls) continue;
+                const selector = '.' + CSS.escape(cls);
+                if (document.querySelectorAll(selector).length === 1) return selector;
+            }
+            // Try combinations of 2
+            if (classes.length >= 2) {
+                const selector = '.' + CSS.escape(classes[0]) + '.' + CSS.escape(classes[1]);
+                if (document.querySelectorAll(selector).length === 1) return selector;
+            }
+        }
+
+        // 5. CSS Path (Recursive Parent)
+        return getCssPath(element);
+    }
+
+    function getCssPath(el) {
+        if (!(el instanceof Element)) return;
+        const path = [];
+        while (el.nodeType === Node.ELEMENT_NODE) {
+            let selector = el.nodeName.toLowerCase();
+            if (el.id) {
+                selector += '#' + CSS.escape(el.id);
+                path.unshift(selector);
+                break;
+            } else {
+                let sib = el, nth = 1;
+                while (sib = sib.previousElementSibling) {
+                    if (sib.nodeName.toLowerCase() == selector)
+                        nth++;
+                }
+                if (nth != 1)
+                    selector += `:nth-of-type(${nth})`;
+            }
+            path.unshift(selector);
+            el = el.parentNode;
+        }
+        return path.join(" > ");
     }
 
     function sendToBackground(type, payload) {

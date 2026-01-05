@@ -46,6 +46,8 @@ COMPLETED_DIR = QUEUE_DIR / 'completed'
 FAILED_DIR = QUEUE_DIR / 'failed'
 WS_HOST = "localhost"
 WS_PORT = 8765
+RECORDING_DIR = Path('C:/OSP_Recordings')
+RECORDING_DIR.mkdir(parents=True, exist_ok=True)
 
 # Ensure directories exist
 for d in [PENDING_DIR, COMPLETED_DIR, FAILED_DIR]:
@@ -69,7 +71,13 @@ PLATFORM_COLORS = {
 
 # Logger setup
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logging.getLogger("websockets").setLevel(logging.WARNING) # Silence websockets INFO logs
 logger = logging.getLogger('OSP_GUI')
+
+def log_ws(msg):
+    """Simple timestamped logging for WebSocket events."""
+    timestamp = time.strftime("%H:%M:%S")
+    print(f"[{timestamp}] WS: {msg}")
 
 
 # =============================================================================
@@ -133,6 +141,10 @@ class LocalJob:
         if isinstance(tags, list):
             return ' '.join(tags)
         return str(tags) if tags else ""
+
+    @property
+    def email_members(self) -> bool:
+        return self.data.get('email_members', False)
 
 
 class JobQueue:
@@ -242,20 +254,27 @@ class WebSocketServer:
     async def _handler(self, websocket):
         self.clients.add(websocket)
         self.signals.client_connected.emit()
+        log_ws(f"Client connected. Remote: {websocket.remote_address} | Total: {len(self.clients)}")
         try:
             async for message in websocket:
                 data = json.loads(message)
+                log_ws(f"<- RECEIVED: {data.get('type')} payload={data.get('payload')}")
                 self.signals.message_received.emit(data)
+            log_ws("Client disconnected (Cleanly).")
+        except websockets.exceptions.ConnectionClosed:
+             log_ws("Client disconnected (ConnectionClosed).")
         except Exception as e:
-            print(f"WS Error: {e}")
+            log_ws(f"Error: {e}")
         finally:
             self.clients.remove(websocket)
             self.signals.client_disconnected.emit()
+            log_ws(f"Client removed. Total: {len(self.clients)}")
 
     def send(self, msg_type: str, payload: Dict[str, Any] = None):
         """Send message to all clients."""
         if not self.loop: return
         
+        log_ws(f"-> SENDING: {msg_type} payload={payload}")
         message = json.dumps({"type": msg_type, "payload": payload or {}})
         asyncio.run_coroutine_threadsafe(self._send_all(message), self.loop)
         
@@ -378,6 +397,13 @@ class PrompterWindow(QMainWindow):
         self.platform_label = QLabel("Platform: ---")
         self.platform_label.setStyleSheet("color: white; font-weight: bold;")
         content_layout.addWidget(self.platform_label)
+
+        # Email Alert Label (Hidden by default)
+        self.email_alert_label = QLabel("📧 TOGGLE EMAIL TO MEMBERS")
+        self.email_alert_label.setStyleSheet("background-color: #ef4444; color: white; font-weight: bold; padding: 4px; border-radius: 4px;")
+        self.email_alert_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.email_alert_label.hide()
+        content_layout.addWidget(self.email_alert_label)
 
         # Image Preview
         self.image_label = QLabel()
@@ -507,6 +533,9 @@ class PrompterWindow(QMainWindow):
                 self.btn_instruction.setText("MARK DONE")
                 self.btn_instruction.setStyleSheet("background-color: #22c55e; color: white; font-weight: bold; border-radius: 6px;")
 
+        elif msg_type == "interaction_recorded":
+            self.record_interaction(payload)
+
         elif msg_type == "element_not_found":
             selector = payload.get("selector", "unknown")
             self.set_instruction_step("ELEMENT NOT FOUND", "#ef4444", lambda: None) # Red
@@ -514,6 +543,43 @@ class PrompterWindow(QMainWindow):
             self.conn_label.setStyleSheet("color: #ef4444; font-size: 11px;")
 
     # --- ACTION LOGIC ---
+    def record_interaction(self, payload: Dict, source: str = "chrome"):
+        """Save recorded interaction to file."""
+        try:
+            timestamp = time.strftime("%Y%m%d")
+            job = self.queue.current_job
+            platform = job.platform.value if job else "unknown"
+            
+            filename = f"recording_{platform}_{timestamp}.json"
+            filepath = RECORDING_DIR / filename
+            
+            # Read existing
+            recordings = []
+            if filepath.exists():
+                try:
+                    with open(filepath, 'r', encoding='utf-8') as f:
+                        recordings = json.load(f)
+                except:
+                    pass
+            
+            # Append new
+            entry = {
+                "timestamp": time.time(),
+                "job_id": job.job_id if job else None,
+                "source": source,
+                "interaction": payload
+            }
+            recordings.append(entry)
+            
+            # Write back
+            with open(filepath, 'w', encoding='utf-8') as f:
+                json.dump(recordings, f, indent=2)
+                
+            log_ws(f"Recorded step ({source}): {payload.get('action') or payload.get('selector')} -> {filename}")
+            
+        except Exception as e:
+            log_ws(f"Failed to record interaction: {e}")
+
     def reset_flow(self):
         self.current_step = 0
         self.set_instruction_step("OPEN URL", "#22c55e", self.open_link_action)
@@ -532,10 +598,13 @@ class PrompterWindow(QMainWindow):
         """)
 
     def on_instruction_click(self):
+        log_ws("UI: Instruction/Main Button Clicked")
         # Placeholder
         pass
 
     def open_link_action(self):
+        log_ws("UI: Open URL Button Clicked")
+        self.record_interaction({"action": "open_url"}, source="osp")
         job = self.queue.current_job
         if job and job.link:
             self.ws_server.send("open_url", {"url": job.link})
@@ -547,6 +616,8 @@ class PrompterWindow(QMainWindow):
             self.open_link() # Fallback
 
     def copy_title_action(self):
+        log_ws("UI: Copy Title Clicked")
+        self.record_interaction({"action": "copy_title"}, source="osp")
         job = self.queue.current_job
         if job:
             pyperclip.copy(job.title)
@@ -554,6 +625,8 @@ class PrompterWindow(QMainWindow):
             self.set_instruction_step("PASTE IN CHROME", "#3b82f6", lambda: None) # Blue
 
     def copy_body_action(self):
+        log_ws("UI: Copy Body Clicked")
+        self.record_interaction({"action": "copy_body"}, source="osp")
         job = self.queue.current_job
         if job:
             pyperclip.copy(job.caption)
@@ -574,6 +647,7 @@ class PrompterWindow(QMainWindow):
                 img = QImage(job.image_path)
                 QApplication.clipboard().setImage(img)
                 self._flash_btn(self.btn_copy_img_data)
+                self.record_interaction({"action": "copy_img_data"}, source="osp")
             except Exception as e:
                 print(f"Failed to copy image: {e}")
 
@@ -602,6 +676,11 @@ class PrompterWindow(QMainWindow):
         self.platform_label.setText(f"Platform: {job.platform.value.upper()}")
         self.platform_label.setStyleSheet(f"color: {color}; font-weight: bold; font-size: 14px;")
         
+        if job.email_members:
+            self.email_alert_label.show()
+        else:
+            self.email_alert_label.hide()
+
         self.content_text.setText(f"{job.title}\n---\n{job.caption[:50]}...")
         
         img_path = job.image_path
@@ -617,11 +696,14 @@ class PrompterWindow(QMainWindow):
             self.image_label.setText("No Image")
 
     def mark_complete(self):
+        log_ws("UI: Mark Complete Clicked")
+        self.record_interaction({"action": "mark_done"}, source="osp")
         if self.queue.complete_current():
             self.refresh_queue()
             self.update_display()
 
     def mark_failed(self):
+        log_ws("UI: Mark Failed Clicked")
         if self.queue.fail_current("User marked failed"):
             self.refresh_queue()
             self.update_display()
