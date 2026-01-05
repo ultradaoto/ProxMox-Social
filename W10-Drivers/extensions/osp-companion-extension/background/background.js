@@ -57,6 +57,7 @@ function scheduleReconnect() {
 
 function sendToOSP(type, payload = {}) {
     if (socket && socket.readyState === WebSocket.OPEN) {
+        console.log('[OSP] Tx:', { type, payload });
         socket.send(JSON.stringify({ type, payload }));
     }
 }
@@ -95,6 +96,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return true;
     }
     if (message.target === 'background' || message.action === 'OSP_SEND') {
+        // Log who sent this
+        console.log(`[OSP] Action: ${message.type} | From: ${sender.tab ? 'Content Script' : 'Popup'}`);
         sendToOSP(message.type, message.payload);
 
         // Handle Recording State

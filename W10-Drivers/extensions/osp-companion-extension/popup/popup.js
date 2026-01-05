@@ -13,13 +13,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
             if (response) {
-                updateStatus(response.connected);
-                // Also update recording state if we had it
+                updateStatus(response.connected, response.recording);
             }
         });
     }
 
-    function updateStatus(isConnected) {
+    function updateStatus(isConnected, isRecording) {
         if (isConnected) {
             statusIndicator.classList.add('connected');
             statusIndicator.classList.remove('disconnected');
@@ -34,6 +33,15 @@ document.addEventListener('DOMContentLoaded', () => {
             connectionStatus.textContent = 'Disconnected';
             connectionStatus.style.color = '#ef4444';
             btnStart.disabled = true;
+        }
+
+        // Sync Recording Buttons
+        if (isRecording) {
+            btnStart.classList.add('hidden');
+            btnStop.classList.remove('hidden');
+        } else {
+            btnStop.classList.add('hidden');
+            btnStart.classList.remove('hidden');
         }
     }
 
