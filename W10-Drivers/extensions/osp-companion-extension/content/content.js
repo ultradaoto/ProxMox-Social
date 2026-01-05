@@ -32,6 +32,9 @@
 
     function onGlobalClick(event) {
         if (!isRecording) return;
+        // Filter out programmatic clicks (e.g. from React/Scripts)
+        if (!event.isTrusted) return;
+
         // Don't report clicks on our own overlay
         if (event.target.closest('.osp-highlight-overlay')) return;
 
@@ -56,7 +59,7 @@
     const SPAM_THRESHOLD_MS = 500;
 
     function handleOSPMessage(type, payload) {
-        // console.log('[OSP] Msg:', type, payload); // Comment out to reduce console spam
+        console.log('[OSP] Msg Received:', type, payload);
         switch (type) {
             case 'highlight_element':
                 const now = Date.now();

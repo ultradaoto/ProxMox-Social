@@ -24,10 +24,11 @@ from enum import Enum
 
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QPushButton, QLabel, QScrollArea, QFrame, QMessageBox, QSizePolicy
+    QPushButton, QLabel, QScrollArea, QFrame, QMessageBox, QSizePolicy,
+    QListWidget, QAbstractItemView, QListWidgetItem
 )
 from PyQt6.QtCore import Qt, QTimer, QSize, QUrl, pyqtSignal, QObject
-from PyQt6.QtGui import QPixmap, QImage, QShortcut, QKeySequence, QIcon, QAction, QDesktopServices
+from PyQt6.QtGui import QPixmap, QImage, QShortcut, QKeySequence, QIcon, QAction, QDesktopServices, QColor
 import pyperclip
 from PIL import Image
 
@@ -287,9 +288,183 @@ class WebSocketServer:
 # GUI
 # =============================================================================
 
+class WorkflowEditor(QMainWindow):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("OSP Workflow Editor")
+        self.resize(900, 600)
+        self.setStyleSheet("background-color: #1e1e1e; color: #e0e0e0;")
+        
+        # Central Widget
+        central = QWidget()
+        self.setCentralWidget(central)
+        layout = QHBoxLayout(central)
+        
+        # --- LEFT: FILES ---
+        file_layout = QVBoxLayout()
+        file_label = QLabel("Recordings")
+        file_label.setStyleSheet("font-weight: bold; font-size: 14px; color: #fff;")
+        file_layout.addWidget(file_label)
+        
+        self.file_list = QListWidget()
+        self.file_list.setStyleSheet("background-color: #252526; border: 1px solid #333;")
+        self.file_list.itemClicked.connect(self.load_steps)
+        file_layout.addWidget(self.file_list)
+        
+        refresh_btn = QPushButton("Refresh Files")
+        refresh_btn.setStyleSheet("background-color: #333; padding: 5px;")
+        refresh_btn.clicked.connect(self.load_files)
+        file_layout.addWidget(refresh_btn)
+        
+        layout.addLayout(file_layout, stretch=1)
+        
+        # --- MIDDLE: STEPS ---
+        step_layout = QVBoxLayout()
+        step_label = QLabel("Workflow Steps")
+        step_label.setStyleSheet("font-weight: bold; font-size: 14px; color: #fff;")
+        step_layout.addWidget(step_label)
+        
+        self.step_list = QListWidget()
+        self.step_list.setStyleSheet("background-color: #252526; border: 1px solid #333; font-family: Consolas;")
+        self.step_list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        step_layout.addWidget(self.step_list)
+        
+        layout.addLayout(step_layout, stretch=2)
+        
+        # --- RIGHT: CONTROLS ---
+        ctrl_layout = QVBoxLayout()
+        ctrl_label = QLabel("Actions")
+        ctrl_label.setStyleSheet("font-weight: bold; font-size: 14px; color: #fff;")
+        ctrl_layout.addWidget(ctrl_label)
+        
+        btn_style = "background-color: #333; padding: 8px; border-radius: 4px; margin-bottom: 5px;"
+        
+        self.btn_up = QPushButton("Move Up ▲")
+        self.btn_up.setStyleSheet(btn_style)
+        self.btn_up.clicked.connect(self.move_up)
+        ctrl_layout.addWidget(self.btn_up)
+        
+        self.btn_down = QPushButton("Move Down ▼")
+        self.btn_down.setStyleSheet(btn_style)
+        self.btn_down.clicked.connect(self.move_down)
+        ctrl_layout.addWidget(self.btn_down)
+        
+        self.btn_del = QPushButton("Delete 🗑️")
+        self.btn_del.setStyleSheet("background-color: #ef4444; color: white; padding: 8px; border-radius: 4px;")
+        self.btn_del.clicked.connect(self.delete_step)
+        ctrl_layout.addWidget(self.btn_del)
+        
+        ctrl_layout.addStretch()
+        
+        self.btn_save = QPushButton("Save Changes 💾")
+        self.btn_save.setStyleSheet("background-color: #22c55e; color: black; padding: 10px; border-radius: 4px; font-weight: bold;")
+        self.btn_save.clicked.connect(self.save_workflow)
+        ctrl_layout.addWidget(self.btn_save)
+        
+        layout.addLayout(ctrl_layout, stretch=1)
+        
+        self.current_data = [] 
+        self.current_file_path = None
+        
+        self.load_files()
+
+    def load_files(self):
+        self.file_list.clear()
+        if not RECORDING_DIR.exists():
+            return
+        
+        files = sorted(RECORDING_DIR.glob("*.json"), key=os.path.getmtime, reverse=True)
+        for f in files:
+            item = QListWidgetItem(f.name)
+            item.setData(Qt.ItemDataRole.UserRole, str(f))
+            self.file_list.addItem(item)
+            
+    def load_steps(self, item=None):
+        if item:
+            path = Path(item.data(Qt.ItemDataRole.UserRole))
+            self.current_file_path = path
+            try:
+                with open(path, 'r', encoding='utf-8') as f:
+                    self.current_data = json.load(f)
+            except Exception as e:
+                print(f"Error loading {path}: {e}")
+                self.current_data = []
+        
+        self.render_steps()
+        
+    def render_steps(self):
+        self.step_list.clear()
+        for i, step in enumerate(self.current_data):
+            source = step.get('source', 'unknown')
+            interaction = step.get('interaction', {})
+            # Handle both Chrome interaction types and OSP actions
+            action_type = interaction.get('type') or interaction.get('action') or 'unknown'
+            selector = interaction.get('selector', '')
+            
+            display_text = f"[{i+1}] {source.upper()}: {action_type}"
+            if selector:
+                display_text += f" - {selector[:40]}"
+            
+            list_item = QListWidgetItem(display_text)
+            
+            if source == 'osp':
+                list_item.setForeground(QColor('#22c55e')) # Green
+            else:
+                list_item.setForeground(QColor('#3b82f6')) # Blue
+                
+            self.step_list.addItem(list_item)
+            
+    def move_up(self):
+        row = self.step_list.currentRow()
+        if row > 0:
+            item = self.current_data.pop(row)
+            self.current_data.insert(row - 1, item)
+            self.render_steps()
+            self.step_list.setCurrentRow(row - 1)
+            
+    def move_down(self):
+        row = self.step_list.currentRow()
+        if row < len(self.current_data) - 1:
+            item = self.current_data.pop(row)
+            self.current_data.insert(row + 1, item)
+            self.render_steps()
+            self.step_list.setCurrentRow(row + 1)
+
+    def delete_step(self):
+        row = self.step_list.currentRow()
+        if row >= 0:
+            self.current_data.pop(row)
+            self.render_steps()
+            if row < self.step_list.count():
+                self.step_list.setCurrentRow(row)
+            elif self.step_list.count() > 0:
+                self.step_list.setCurrentRow(self.step_list.count() - 1)
+            
+    def save_workflow(self):
+        if self.current_file_path:
+             try:
+                 with open(self.current_file_path, 'w', encoding='utf-8') as f:
+                    json.dump(self.current_data, f, indent=2)
+                 QMessageBox.information(self, "Saved", f"Workflow saved to {self.current_file_path.name}")
+             except Exception as e:
+                 QMessageBox.critical(self, "Error", f"Failed to save: {e}")
+
 class PrompterWindow(QMainWindow):
+    new_log_message = pyqtSignal(str)
+
     def __init__(self):
         super().__init__()
+        
+        # Connect log signal
+        self.new_log_message.connect(self.update_log_window)
+        
+        # Override global log_ws to use our signal
+        global log_ws
+        original_log_ws = log_ws
+        def gui_log_ws(msg):
+            original_log_ws(msg)
+            self.new_log_message.emit(msg)
+        log_ws = gui_log_ws
         
         # Logic
         self.queue = JobQueue()
@@ -302,6 +477,8 @@ class PrompterWindow(QMainWindow):
         
         # State
         self.is_recording = False
+        self.playback_steps = []
+        self.current_playback_index = 0
         self.current_step = 0
         self.target_width = 300
         
@@ -338,7 +515,9 @@ class PrompterWindow(QMainWindow):
         self.target_width = osp_width
         chrome_width = width - osp_width
         
-        self.setGeometry(x_offset + width - osp_width, y_offset, osp_width, height)
+        # Limit height to avoid expanding off screen (e.g., 80% of screen height)
+        max_height = int(height * 0.8)
+        self.setGeometry(x_offset + width - osp_width, y_offset, osp_width, max_height)
         self.setMaximumWidth(osp_width)
         
         if gw:
@@ -358,13 +537,41 @@ class PrompterWindow(QMainWindow):
         self.setCentralWidget(central)
         layout = QVBoxLayout(central)
         layout.setContentsMargins(10, 10, 10, 10)
+        layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(8)
         
+        # --- LOG WINDOW ---
+        self.log_list = QListWidget()
+        self.log_list.setFixedHeight(60)
+        self.log_list.setStyleSheet("""
+            QListWidget {
+                background-color: #000; color: #22c55e; border: 1px solid #333;
+                font-family: Consolas, monospace; font-size: 10px;
+            }
+            QListWidget::item { padding: 2px; }
+        """)
+        self.log_list.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.log_list.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
+        layout.addWidget(self.log_list)
+
         # --- TOP STATUS BAR ---
         status_layout = QHBoxLayout()
         self.conn_label = QLabel("● Disconnected")
         self.conn_label.setStyleSheet("color: #ef4444; font-size: 11px;") # Red
         status_layout.addWidget(self.conn_label)
+        
+        # Mode Label (Recording/Playback)
+        self.mode_label = QLabel("")
+        self.mode_label.setStyleSheet("font-weight: bold; font-size: 11px;")
+        status_layout.addWidget(self.mode_label)
+        
+        status_layout.addStretch()
+        
+        # Workflow Button
+        workflow_btn = QPushButton("WORKFLOWS")
+        workflow_btn.setStyleSheet("background-color: #3b82f6; color: white; border: none; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;")
+        workflow_btn.clicked.connect(self.open_workflow_editor)
+        status_layout.addWidget(workflow_btn)
         
         self.count_label = QLabel("Queue: 0")
         self.count_label.setStyleSheet("color: #aaa; font-size: 11px;")
@@ -505,6 +712,10 @@ class PrompterWindow(QMainWindow):
                 log_ws("Page loaded (Recording Mode) - Skipping auto-guide")
                 return
 
+            if self.playback_steps:
+                log_ws("Page loaded (Playback Mode) - Skipping auto-guide")
+                return
+
             # Page loaded -> Prompt to copy title
             self.set_instruction_step("COPY TITLE", "#22c55e", self.copy_title_action)
             self.ws_server.send("highlight_element", {
@@ -519,6 +730,16 @@ class PrompterWindow(QMainWindow):
             elif field == "body":
                 self.set_instruction_step("COPY BODY", "#22c55e", self.copy_body_action)
                 
+        if msg_type == "interaction_recorded":
+            self.record_interaction(payload)
+            
+            # Playback Sync with Lookahead
+            match_idx = self.check_playback_match(payload)
+            if match_idx != -1:
+                log_ws(f"Playback: Matched step {match_idx} (Current: {self.current_playback_index})")
+                self.current_playback_index = match_idx + 1
+                self.advance_playback()
+
         elif msg_type == "paste_detected":
             selector = payload.get("selector", "")
             
@@ -527,6 +748,20 @@ class PrompterWindow(QMainWindow):
                 record_payload = payload.copy()
                 record_payload['action'] = 'paste'
                 self.record_interaction(record_payload, source="chrome")
+                return
+
+            # Construct pseudo-payload for matching
+            pseudo_payload = payload.copy()
+            pseudo_payload['type'] = 'paste' # or whatever your macro saves pastes as (check recording)
+            # Actually, the recording saves it as source='chrome', interaction={'type': 'paste', ...} usually? 
+            # Let's double check check_playback_match logic below.
+            
+            # We treat 'paste_detected' as an improved interaction event
+            match_idx = self.check_playback_match({'type': 'paste', 'action': 'paste'}, lookahead=5)
+            if match_idx != -1:
+                log_ws(f"Playback: Paste Matched step {match_idx}")
+                self.current_playback_index = match_idx + 1
+                self.advance_playback()
                 return
 
             if "title" in selector.lower():
@@ -546,36 +781,63 @@ class PrompterWindow(QMainWindow):
                 self.btn_instruction.setText("MARK DONE")
                 self.btn_instruction.setStyleSheet("background-color: #22c55e; color: white; font-weight: bold; border-radius: 6px;")
 
-        elif msg_type == "interaction_recorded":
-            self.record_interaction(payload)
+
 
         elif msg_type == "element_not_found":
             selector = payload.get("selector", "unknown")
-            self.set_instruction_step("ELEMENT NOT FOUND", "#ef4444", lambda: None) # Red
+            log_ws(f"Element not found: {selector}")
+            # Non-blocking: Just update status text, don't change button state
             self.conn_label.setText(f"Missing: {selector}")
-            self.conn_label.setStyleSheet("color: #ef4444; font-size: 11px;")
+            self.conn_label.setStyleSheet("color: #eab308; font-size: 11px;") # Yellow warning
 
         elif msg_type == "start_recording":
             self.is_recording = True
             log_ws("Entered Recording Mode")
-            self.set_instruction_step("🔴 RECORDING...", "#ef4444", lambda: None)
-            self.conn_label.setText("● Recording")
-            self.conn_label.setStyleSheet("color: #ef4444; font-weight: bold; font-size: 11px;")
+            # Update Mode Indicator in Header (Red)
+            self.mode_label.setText("● Recording")
+            self.mode_label.setStyleSheet("color: #ef4444; font-weight: bold; font-size: 11px; margin-left: 10px;")
+            
+            # Keep Connected Green
+            self.conn_label.setText("● Connected")
+            self.conn_label.setStyleSheet("color: #22c55e; font-size: 11px;")
 
         elif msg_type == "stop_recording":
             self.is_recording = False
             log_ws("Exited Recording Mode")
-            self.reset_flow()
+            # Show saving state
+            self.set_instruction_step("SAVING MACRO...", "#eab308", lambda: None)
+            QTimer.singleShot(1500, self.reset_flow)
 
     # --- ACTION LOGIC ---
+    def get_job_variant(self, job):
+        """Extract variant from job link (e.g., 'desci' from 'skool.com/desci-xxxx')."""
+        if not job or not job.link:
+            return "default"
+        
+        try:
+            # Basic parsing for Skool
+            if "skool.com/" in job.link:
+                parts = job.link.split("skool.com/")
+                if len(parts) > 1:
+                    # 'desci-2718/...' -> 'desci'
+                    group_part = parts[1].split("/")[0]
+                    variant = group_part.split("-")[0]
+                    return variant
+        except:
+            pass
+            
+        return "default"
+
     def record_interaction(self, payload: Dict, source: str = "chrome"):
         """Save recorded interaction to file."""
         try:
-            timestamp = time.strftime("%Y%m%d")
+            # timestamp = time.strftime("%Y%m%d") # No longer needed for unique files
             job = self.queue.current_job
             platform = job.platform.value if job else "unknown"
+            variant = self.get_job_variant(job)
             
-            filename = f"recording_{platform}_{timestamp}.json"
+            # recording_skool_desci.json
+            filename = f"recording_{platform}_{variant}.json"
             filepath = RECORDING_DIR / filename
             
             # Read existing
@@ -600,14 +862,139 @@ class PrompterWindow(QMainWindow):
             with open(filepath, 'w', encoding='utf-8') as f:
                 json.dump(recordings, f, indent=2)
                 
-            log_ws(f"Recorded step ({source}): {payload.get('action') or payload.get('selector')} -> {filename}")
+            log_ws(f"Recorded ({source}): {payload.get('action') or 'click'} -> {filename}")
             
         except Exception as e:
             log_ws(f"Failed to record interaction: {e}")
 
+    def load_playback_macro(self):
+        """Try to load a macro for the current variant."""
+        job = self.queue.current_job
+        if not job: return
+        
+        platform = job.platform.value
+        variant = self.get_job_variant(job)
+        filename = f"recording_{platform}_{variant}.json"
+        filepath = RECORDING_DIR / filename
+        
+        if filepath.exists():
+            try:
+                with open(filepath, 'r', encoding='utf-8') as f:
+                    self.playback_steps = json.load(f)
+                self.current_playback_index = 0
+                log_ws(f"Loaded macro: {filename} ({len(self.playback_steps)} steps)")
+                
+                # Update Mode Indicator (Yellow)
+                self.mode_label.setText("● Playback")
+                self.mode_label.setStyleSheet("color: #eab308; font-weight: bold; font-size: 11px; margin-left: 10px;")
+                
+                self.advance_playback()
+            except Exception as e:
+                log_ws(f"Error loading macro: {e}")
+        else:
+            log_ws(f"No macro found for {variant}")
+
+    def check_playback_match(self, payload, lookahead=3):
+        """Check if payload matches current or future steps."""
+        if not self.playback_steps: return -1
+        
+        start = self.current_playback_index
+        end = min(len(self.playback_steps), start + lookahead)
+        
+        for i in range(start, end):
+            step = self.playback_steps[i]
+            if step.get('source') != 'chrome': continue
+            
+            expected = step.get('interaction', {})
+            
+            # Match Logic
+            # 1. Action Name (e.g., 'paste')
+            if payload.get('action') == 'paste' and expected.get('action') == 'paste':
+                return i
+            
+            # 2. Event Type (click vs click)
+            p_type = payload.get('type')
+            e_type = expected.get('type')
+            
+            if p_type and e_type and p_type == e_type:
+                # Optional: Check selector similarity? For now, type is usually enough for sequential flow
+                return i
+                
+        return -1
+
+    def advance_playback(self):
+        """Update UI to show next expected step."""
+        if not self.playback_steps: return
+        
+        # Find next relevant step (skipping past ones)
+        while self.current_playback_index < len(self.playback_steps):
+            step = self.playback_steps[self.current_playback_index]
+            source = step.get('source')
+            interaction = step.get('interaction', {})
+            
+            if source == 'osp':
+                # Map action to readable text
+                action = interaction.get('action')
+                label = action.upper().replace("_", " ") # copy_title -> COPY TITLE
+                self.set_instruction_step(f"MACRO: {label}", "#8b5cf6", lambda: None) # Violet
+                return
+            
+            elif source == 'chrome':
+                # Active Guidance for Chrome Actions
+                action_type = interaction.get('type') # click
+                action_name = interaction.get('action') # paste
+                selector = interaction.get('selector')
+                
+                label = "CLICK HIGHLIGHT"
+                color = "#3b82f6" # Blue
+                
+                if action_name == "paste":
+                    label = "PASTE CONTENT"
+                    color = "#eab308" # Yellow/Orange for attention
+                
+                # Send highlight to Chrome
+                self.ws_server.send("highlight_element", {
+                    "selector": selector,
+                    "label": label
+                })
+                
+                self.set_instruction_step(f"-> {label}", color, lambda: None)
+                return # Stop and wait for user action
+            
+            self.current_playback_index += 1
+            
+        self.set_instruction_step("MACRO DONE", "#22c55e", lambda: None)
+
+    def trigger_playback_step(self, action_name):
+        """Called when a button is clicked. Advances macro if it matches."""
+        if not self.playback_steps: return
+        
+        # Check if current expected step matches this action
+        if self.current_playback_index < len(self.playback_steps):
+            step = self.playback_steps[self.current_playback_index]
+            if step.get('source') == 'osp':
+                expected = step.get('interaction', {}).get('action')
+                if expected == action_name:
+                    self.current_playback_index += 1
+                    # Slight delay to let the click register visually
+                    QTimer.singleShot(500, self.advance_playback)
+
     def reset_flow(self):
-        self.current_step = 0
-        self.set_instruction_step("OPEN URL", "#22c55e", self.open_link_action)
+        # Reset Mode Label
+        self.mode_label.setText("")
+        
+        # Reset Connection Label (Always Green if connected, but here we assume connected if resetting flow)
+        self.conn_label.setText("● Connected")
+        self.conn_label.setStyleSheet("color: #22c55e; font-size: 11px;")
+        
+        self.is_recording = False
+
+        # Button State based on Queue
+        if self.queue.current_job:
+            self.set_instruction_step("OPEN URL", "#22c55e", self.open_link_action)
+        else:
+            self.set_instruction_step("NO JOBS", "#555", lambda: None)
+            self.btn_instruction.setEnabled(False)
 
     def set_instruction_step(self, text, color, func):
         self.btn_instruction.setText(text)
@@ -630,6 +1017,8 @@ class PrompterWindow(QMainWindow):
     def open_link_action(self):
         log_ws("UI: Open URL Button Clicked")
         self.record_interaction({"action": "open_url"}, source="osp")
+        self.trigger_playback_step("open_url")
+        
         job = self.queue.current_job
         if job and job.link:
             self.ws_server.send("open_url", {"url": job.link})
@@ -637,12 +1026,17 @@ class PrompterWindow(QMainWindow):
             self.btn_instruction.setEnabled(False)
             # Re-enable after 5s timestamp to prevent lock
             QTimer.singleShot(5000, lambda: self.btn_instruction.setEnabled(True))
+            
+            # Initialize Playback
+            if not self.is_recording:
+                QTimer.singleShot(1000, self.load_playback_macro)
         else:
             self.open_link() # Fallback
 
     def copy_title_action(self):
         log_ws("UI: Copy Title Clicked")
         self.record_interaction({"action": "copy_title"}, source="osp")
+        self.trigger_playback_step("copy_title")
         job = self.queue.current_job
         if job:
             pyperclip.copy(job.title)
@@ -652,6 +1046,7 @@ class PrompterWindow(QMainWindow):
     def copy_body_action(self):
         log_ws("UI: Copy Body Clicked")
         self.record_interaction({"action": "copy_body"}, source="osp")
+        self.trigger_playback_step("copy_body")
         job = self.queue.current_job
         if job:
             pyperclip.copy(job.caption)
@@ -673,6 +1068,7 @@ class PrompterWindow(QMainWindow):
                 QApplication.clipboard().setImage(img)
                 self._flash_btn(self.btn_copy_img_data)
                 self.record_interaction({"action": "copy_img_data"}, source="osp")
+                self.trigger_playback_step("copy_img_data")
             except Exception as e:
                 print(f"Failed to copy image: {e}")
 
@@ -723,6 +1119,7 @@ class PrompterWindow(QMainWindow):
     def mark_complete(self):
         log_ws("UI: Mark Complete Clicked")
         self.record_interaction({"action": "mark_done"}, source="osp")
+        self.trigger_playback_step("mark_done")
         if self.queue.complete_current():
             self.refresh_queue()
             self.update_display()
@@ -753,6 +1150,24 @@ class PrompterWindow(QMainWindow):
         btn.setStyleSheet("background-color: white; color: black;")
         QTimer.singleShot(200, lambda: btn.setStyleSheet(orig))
 
+    def update_log_window(self, msg):
+        """Add message to log window and keep last 3."""
+        # Strip timestamp for UI cleanliness if present (optional, but requested "rolling text")
+        # Assuming msg format "[HH:MM:SS] WS: ..." or similar
+        display_msg = msg
+        if "] WS: " in msg:
+            display_msg = msg.split("] WS: ")[1]
+            
+        self.log_list.addItem(display_msg)
+        self.log_list.scrollToBottom()
+        
+        while self.log_list.count() > 3:
+            self.log_list.takeItem(0)
+
+    def open_workflow_editor(self):
+        self.workflow_editor = WorkflowEditor(self)
+        self.workflow_editor.show()
+
 
 def main():
     app = QApplication(sys.argv)
@@ -760,6 +1175,7 @@ def main():
     window = PrompterWindow()
     window.show()
     sys.exit(app.exec())
+
 
 if __name__ == "__main__":
     main()
