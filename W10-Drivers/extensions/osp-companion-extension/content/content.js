@@ -15,10 +15,21 @@
         }
     });
 
+    let lastHighlightTime = 0;
+    let lastHighlightSelector = '';
+    const SPAM_THRESHOLD_MS = 500;
+
     function handleOSPMessage(type, payload) {
-        console.log('[OSP] Msg:', type, payload);
+        // console.log('[OSP] Msg:', type, payload); // Comment out to reduce console spam
         switch (type) {
             case 'highlight_element':
+                const now = Date.now();
+                if (payload.selector === lastHighlightSelector && (now - lastHighlightTime < SPAM_THRESHOLD_MS)) {
+                    // Ignore spam
+                    return;
+                }
+                lastHighlightTime = now;
+                lastHighlightSelector = payload.selector;
                 highlightElement(payload.selector, payload.label);
                 break;
             case 'clear_highlights':
@@ -32,6 +43,7 @@
         let element = document.querySelector(selector);
         if (!element) {
             console.warn('[OSP] Element not found:', selector);
+            sendToBackground('element_not_found', { selector: selector });
             return;
         }
 
@@ -52,14 +64,29 @@
         document.body.appendChild(highlightOverlay);
         positionOverlay(element);
 
-        window.addEventListener('scroll', updateOverlayPosition, true);
-        window.addEventListener('resize', updateOverlayPosition);
+        window.addEventListener('scroll', onScroll, true);
+        window.addEventListener('resize', onResize);
 
         element.classList.add('osp-highlighted-element');
         element.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
         element.addEventListener('click', onHighlightedElementClick);
         element.addEventListener('focus', onHighlightedElementFocus);
+    }
+
+    let isTicking = false;
+    function onScroll() {
+        if (!isTicking) {
+            window.requestAnimationFrame(() => {
+                updateOverlayPosition();
+                isTicking = false;
+            });
+            isTicking = true;
+        }
+    }
+
+    function onResize() {
+        onScroll();
     }
 
     function updateOverlayPosition() {
@@ -80,8 +107,8 @@
             highlightOverlay.remove();
             highlightOverlay = null;
         }
-        window.removeEventListener('scroll', updateOverlayPosition, true);
-        window.removeEventListener('resize', updateOverlayPosition);
+        window.removeEventListener('scroll', onScroll, true);
+        window.removeEventListener('resize', onResize);
         if (highlightedElement) {
             highlightedElement.classList.remove('osp-highlighted-element');
             highlightedElement.removeEventListener('click', onHighlightedElementClick);

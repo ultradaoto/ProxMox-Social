@@ -507,6 +507,12 @@ class PrompterWindow(QMainWindow):
                 self.btn_instruction.setText("MARK DONE")
                 self.btn_instruction.setStyleSheet("background-color: #22c55e; color: white; font-weight: bold; border-radius: 6px;")
 
+        elif msg_type == "element_not_found":
+            selector = payload.get("selector", "unknown")
+            self.set_instruction_step("ELEMENT NOT FOUND", "#ef4444", lambda: None) # Red
+            self.conn_label.setText(f"Missing: {selector}")
+            self.conn_label.setStyleSheet("color: #ef4444; font-size: 11px;")
+
     # --- ACTION LOGIC ---
     def reset_flow(self):
         self.current_step = 0

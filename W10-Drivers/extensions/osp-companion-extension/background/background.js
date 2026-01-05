@@ -84,10 +84,15 @@ function handleOSPMessage(data) {
     }
 }
 
-// Intercept messages from Content Script intended for OSP
+// Intercept messages from Content Script or Popup intended for OSP or Status Checks
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.action === 'GET_STATUS') {
+        sendResponse({ connected: socket && socket.readyState === WebSocket.OPEN });
+        return true;
+    }
     if (message.target === 'background' || message.action === 'OSP_SEND') {
         sendToOSP(message.type, message.payload);
+        return false;
     }
     // Don't return true unless we sendResponse asynchronously, which we don't here
 });
