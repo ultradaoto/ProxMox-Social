@@ -150,7 +150,6 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
             }, 500); // Small delay to ensure script is ready
         }
     }
-}
 });
 
 // Init OSP
