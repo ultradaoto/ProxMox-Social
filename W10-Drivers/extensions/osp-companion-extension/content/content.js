@@ -80,11 +80,19 @@
         }
     }
 
-    function highlightElement(selector, label) {
+    async function highlightElement(selector, label) {
         clearHighlights();
-        let element = document.querySelector(selector);
+
+        // Try to find the element with retries (up to 5s)
+        let element = null;
+        try {
+            element = await waitForElement(selector, 5000);
+        } catch (e) {
+            // Timed out
+        }
+
         if (!element) {
-            console.warn('[OSP] Element not found:', selector);
+            console.warn('[OSP] Element not found (after 5s):', selector);
             sendToBackground('element_not_found', { selector: selector });
             return;
         }
@@ -114,6 +122,31 @@
 
         element.addEventListener('click', onHighlightedElementClick);
         element.addEventListener('focus', onHighlightedElementFocus);
+    }
+
+    function waitForElement(selector, timeout = 5000) {
+        return new Promise((resolve, reject) => {
+            if (document.querySelector(selector)) {
+                return resolve(document.querySelector(selector));
+            }
+
+            const observer = new MutationObserver(mutations => {
+                if (document.querySelector(selector)) {
+                    observer.disconnect();
+                    resolve(document.querySelector(selector));
+                }
+            });
+
+            observer.observe(document.body, {
+                childList: true,
+                subtree: true
+            });
+
+            setTimeout(() => {
+                observer.disconnect();
+                reject(new Error("Timeout"));
+            }, timeout);
+        });
     }
 
     let isTicking = false;
