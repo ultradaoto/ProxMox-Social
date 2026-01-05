@@ -5,6 +5,7 @@
 
 let socket = null;
 let reconnectAttempts = 0;
+let isRecording = false;
 const MAX_RECONNECT_ATTEMPTS = 100;
 const WS_URL = 'ws://localhost:8765';
 
@@ -84,13 +85,6 @@ function handleOSPMessage(data) {
     }
 }
 
-// State
-let socket = null;
-let reconnectAttempts = 0;
-let isRecording = false;
-
-// ... (socket/reconnect logic remains the same) ...
-
 // Intercept messages from Content Script or Popup intended for OSP or Status Checks
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.action === 'GET_STATUS') {
@@ -156,19 +150,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
             }, 500); // Small delay to ensure script is ready
         }
     }
-}); let platform = 'unknown';
-if (tab.url.includes('skool.com')) platform = 'skool';
-else if (tab.url.includes('instagram.com')) platform = 'instagram';
-else if (tab.url.includes('facebook.com')) platform = 'facebook';
-else if (tab.url.includes('tiktok.com')) platform = 'tiktok';
-else if (tab.url.includes('linkedin.com')) platform = 'linkedin';
-
-sendToOSP('page_loaded', {
-    url: tab.url,
-    title: tab.title,
-    platform: platform
-});
-    }
+}
 });
 
 // Init OSP
