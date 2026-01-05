@@ -515,9 +515,8 @@ class PrompterWindow(QMainWindow):
         self.target_width = osp_width
         chrome_width = width - osp_width
         
-        # Limit height to avoid expanding off screen (e.g., 80% of screen height)
-        max_height = int(height * 0.8)
-        self.setGeometry(x_offset + width - osp_width, y_offset, osp_width, max_height)
+        # Restore 100% height
+        self.setGeometry(x_offset + width - osp_width, y_offset, osp_width, height)
         self.setMaximumWidth(osp_width)
         
         if gw:
