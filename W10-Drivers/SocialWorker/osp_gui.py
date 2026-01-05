@@ -301,6 +301,7 @@ class PrompterWindow(QMainWindow):
         self.ws_server.start()
         
         # State
+        self.is_recording = False
         self.current_step = 0
         self.target_width = 300
         
@@ -500,6 +501,10 @@ class PrompterWindow(QMainWindow):
         payload = data.get("payload", {})
         
         if msg_type == "page_loaded":
+            if self.is_recording:
+                log_ws("Page loaded (Recording Mode) - Skipping auto-guide")
+                return
+
             # Page loaded -> Prompt to copy title
             self.set_instruction_step("COPY TITLE", "#22c55e", self.copy_title_action)
             self.ws_server.send("highlight_element", {
@@ -516,6 +521,14 @@ class PrompterWindow(QMainWindow):
                 
         elif msg_type == "paste_detected":
             selector = payload.get("selector", "")
+            
+            if self.is_recording:
+                # Record paste event
+                record_payload = payload.copy()
+                record_payload['action'] = 'paste'
+                self.record_interaction(record_payload, source="chrome")
+                return
+
             if "title" in selector.lower():
                 # Title pasted -> Move to body
                 self.set_instruction_step("COPY BODY", "#22c55e", self.copy_body_action)
@@ -541,6 +554,18 @@ class PrompterWindow(QMainWindow):
             self.set_instruction_step("ELEMENT NOT FOUND", "#ef4444", lambda: None) # Red
             self.conn_label.setText(f"Missing: {selector}")
             self.conn_label.setStyleSheet("color: #ef4444; font-size: 11px;")
+
+        elif msg_type == "start_recording":
+            self.is_recording = True
+            log_ws("Entered Recording Mode")
+            self.set_instruction_step("🔴 RECORDING...", "#ef4444", lambda: None)
+            self.conn_label.setText("● Recording")
+            self.conn_label.setStyleSheet("color: #ef4444; font-weight: bold; font-size: 11px;")
+
+        elif msg_type == "stop_recording":
+            self.is_recording = False
+            log_ws("Exited Recording Mode")
+            self.reset_flow()
 
     # --- ACTION LOGIC ---
     def record_interaction(self, payload: Dict, source: str = "chrome"):

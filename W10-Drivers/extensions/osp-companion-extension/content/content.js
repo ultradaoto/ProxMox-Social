@@ -35,14 +35,20 @@
         // Don't report clicks on our own overlay
         if (event.target.closest('.osp-highlight-overlay')) return;
 
-        sendToBackground('interaction_recorded', {
-            type: 'click',
-            selector: getSelector(event.target),
-            element_type: event.target.tagName.toLowerCase(),
-            x: event.clientX,
-            y: event.clientY,
-            timestamp: Date.now()
-        });
+        try {
+            const selector = getSelector(event.target);
+            // console.log('[OSP] Click detected:', selector);
+            sendToBackground('interaction_recorded', {
+                type: 'click',
+                selector: selector,
+                element_type: event.target.tagName.toLowerCase(),
+                x: event.clientX,
+                y: event.clientY,
+                timestamp: Date.now()
+            });
+        } catch (e) {
+            console.error('[OSP] Failed to record click:', e);
+        }
     }
 
     let lastHighlightTime = 0;

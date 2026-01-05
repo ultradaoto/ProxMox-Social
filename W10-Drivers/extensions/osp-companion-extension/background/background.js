@@ -84,32 +84,50 @@ function handleOSPMessage(data) {
     }
 }
 
+// State
+let socket = null;
+let reconnectAttempts = 0;
+let isRecording = false;
+
+// ... (socket/reconnect logic remains the same) ...
+
 // Intercept messages from Content Script or Popup intended for OSP or Status Checks
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.action === 'GET_STATUS') {
-        sendResponse({ connected: socket && socket.readyState === WebSocket.OPEN });
+        sendResponse({
+            connected: socket && socket.readyState === WebSocket.OPEN,
+            recording: isRecording
+        });
         return true;
     }
     if (message.target === 'background' || message.action === 'OSP_SEND') {
         sendToOSP(message.type, message.payload);
 
-        // If it's a recording command, also forward to current tab immediately
-        // so we don't depend on Python echoing it back yet.
-        if (message.type === 'start_recording' || message.type === 'stop_recording') {
-            chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-                if (tabs[0]) {
-                    chrome.tabs.sendMessage(tabs[0].id, {
-                        action: 'OSP_MESSAGE',
-                        ospType: message.type,
-                        payload: message.payload
-                    }).catch(() => { });
-                }
-            });
+        // Handle Recording State
+        if (message.type === 'start_recording') {
+            isRecording = true;
+            broadcastRecordingState(true);
+        } else if (message.type === 'stop_recording') {
+            isRecording = false;
+            broadcastRecordingState(false);
         }
         return false;
     }
     // Don't return true unless we sendResponse asynchronously, which we don't here
 });
+
+function broadcastRecordingState(enabled) {
+    const action = enabled ? 'start_recording' : 'stop_recording';
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (tabs[0]) {
+            chrome.tabs.sendMessage(tabs[0].id, {
+                action: 'OSP_MESSAGE',
+                ospType: action,
+                payload: {}
+            }).catch(() => { });
+        }
+    });
+}
 
 // Tab Updates for OSP
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
@@ -126,6 +144,30 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
             title: tab.title,
             platform: platform
         });
+
+        // Re-apply recording mode if active (Content Script resets on reload)
+        if (isRecording) {
+            setTimeout(() => {
+                chrome.tabs.sendMessage(tabId, {
+                    action: 'OSP_MESSAGE',
+                    ospType: 'start_recording',
+                    payload: {}
+                }).catch(() => { });
+            }, 500); // Small delay to ensure script is ready
+        }
+    }
+}); let platform = 'unknown';
+if (tab.url.includes('skool.com')) platform = 'skool';
+else if (tab.url.includes('instagram.com')) platform = 'instagram';
+else if (tab.url.includes('facebook.com')) platform = 'facebook';
+else if (tab.url.includes('tiktok.com')) platform = 'tiktok';
+else if (tab.url.includes('linkedin.com')) platform = 'linkedin';
+
+sendToOSP('page_loaded', {
+    url: tab.url,
+    title: tab.title,
+    platform: platform
+});
     }
 });
 
