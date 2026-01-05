@@ -1,0 +1,233 @@
+body,
+html {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #f3f4f6;
+    color: #1f2937;
+}
+
+.app-container {
+    display: flex;
+    height: 100vh;
+}
+
+/* Sidebar */
+.sidebar {
+    width: 250px;
+    background: white;
+    border-right: 1px solid #e5e7eb;
+    display: flex;
+    flex-direction: column;
+}
+
+.sidebar-header {
+    padding: 20px;
+    border-bottom: 1px solid #e5e7eb;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.sidebar-header h2 {
+    margin: 0;
+    font-size: 18px;
+}
+
+.primary-btn {
+    background: #10b981;
+    color: white;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 500;
+}
+
+.guide-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 10px;
+}
+
+.guide-item {
+    padding: 10px 15px;
+    border-radius: 6px;
+    cursor: pointer;
+    margin-bottom: 4px;
+    transition: background 0.2s;
+}
+
+.guide-item:hover {
+    background: #f9fafb;
+}
+
+.guide-item.active {
+    background: #ecfdf5;
+    color: #065f46;
+    font-weight: 500;
+}
+
+/* Main Content */
+.main-content {
+    flex: 1;
+    padding: 40px;
+    overflow-y: auto;
+}
+
+.empty-state {
+    text-align: center;
+    color: #6b7280;
+    margin-top: 100px;
+}
+
+/* Editor */
+.editor-header {
+    margin-bottom: 30px;
+    background: white;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+#guide-name {
+    width: 100%;
+    font-size: 24px;
+    font-weight: bold;
+    border: none;
+    outline: none;
+    margin-bottom: 10px;
+}
+
+.guide-meta {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+#guide-host {
+    padding: 8px;
+    border: 1px solid #d1d5db;
+    border-radius: 4px;
+    flex: 1;
+}
+
+.save-btn {
+    background: #2563eb;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    font-weight: 500;
+    cursor: pointer;
+}
+
+/* Steps */
+.step-card {
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    overflow: hidden;
+}
+
+.step-header {
+    background: #f9fafb;
+    padding: 10px 20px;
+    border-bottom: 1px solid #e5e7eb;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.step-number {
+    font-weight: bold;
+    color: #6b7280;
+}
+
+.btn-delete-step {
+    background: none;
+    border: none;
+    cursor: pointer;
+    opacity: 0.5;
+}
+
+.btn-delete-step:hover {
+    opacity: 1;
+}
+
+.step-body {
+    padding: 20px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    align-items: start;
+    /* Fix alignment */
+}
+
+.form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.form-group label {
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: #4b5563;
+}
+
+input,
+select {
+    padding: 8px;
+    border: 1px solid #d1d5db;
+    border-radius: 4px;
+    font-size: 14px;
+}
+
+.selector-input-group {
+    display: flex;
+    gap: 8px;
+}
+
+.selector-input-group input {
+    flex: 1;
+}
+
+.btn-pick-selector {
+    background: #f3f4f6;
+    border: 1px solid #d1d5db;
+    border-radius: 4px;
+    width: 36px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.btn-pick-selector:hover {
+    background: #e5e7eb;
+}
+
+.secondary-btn {
+    width: 100%;
+    padding: 12px;
+    background: white;
+    border: 2px dashed #d1d5db;
+    color: #6b7280;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 500;
+}
+
+.secondary-btn:hover {
+    border-color: #9ca3af;
+    color: #374151;
+}
+
+small {
+    font-size: 11px;
+    color: #6b7280;
+}

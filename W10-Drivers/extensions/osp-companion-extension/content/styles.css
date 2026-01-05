@@ -1,3 +1,7 @@
+/* =========================================
+   OSP Integration Styles (Green/Pulse)
+   ========================================= */
+
 /* Highlighted element style */
 .osp-highlighted-element {
     outline: 4px solid #00ff00 !important;
@@ -22,7 +26,6 @@
 .osp-highlight-overlay {
     position: fixed;
     z-index: 2147483647;
-    /* Max signed 32-bit integer */
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -52,7 +55,6 @@
     font-weight: bold;
     white-space: nowrap;
     box-shadow: 0 4px 15px rgba(0, 255, 0, 0.4);
-    text-transform: uppercase;
 }
 
 .osp-highlight-arrow {
