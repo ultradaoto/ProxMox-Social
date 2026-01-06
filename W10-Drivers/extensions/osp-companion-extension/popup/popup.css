@@ -145,3 +145,7 @@ body {
 .log-entry.success {
     color: #34d399;
 }
+
+.log-entry.warning {
+    color: #fbbf24;
+}

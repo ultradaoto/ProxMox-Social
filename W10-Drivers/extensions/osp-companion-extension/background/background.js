@@ -6,6 +6,7 @@
 let socket = null;
 let reconnectAttempts = 0;
 let isRecording = false;
+let reapplyTimerId = null;  // Track the re-apply timer so we can cancel it
 const MAX_RECONNECT_ATTEMPTS = 100;
 const WS_URL = 'ws://localhost:8765';
 
@@ -106,6 +107,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             broadcastRecordingState(true);
         } else if (message.type === 'stop_recording') {
             isRecording = false;
+            // Cancel any pending re-apply timer
+            if (reapplyTimerId) {
+                clearTimeout(reapplyTimerId);
+                reapplyTimerId = null;
+                console.log('[OSP] Cancelled pending re-apply timer');
+            }
             broadcastRecordingState(false);
         }
         return false;
@@ -115,13 +122,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 function broadcastRecordingState(enabled) {
     const action = enabled ? 'start_recording' : 'stop_recording';
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        if (tabs[0]) {
-            chrome.tabs.sendMessage(tabs[0].id, {
-                action: 'OSP_MESSAGE',
-                ospType: action,
-                payload: {}
-            }).catch(() => { });
+    // Send to ALL tabs to ensure content scripts receive it immediately
+    chrome.tabs.query({}, (tabs) => {
+        for (const tab of tabs) {
+            // Skip chrome:// and edge:// internal pages where content scripts can't run
+            if (tab.id && tab.url && !tab.url.startsWith('chrome://') && !tab.url.startsWith('edge://')) {
+                chrome.tabs.sendMessage(tab.id, {
+                    action: 'OSP_MESSAGE',
+                    ospType: action,
+                    payload: {}
+                }).catch(() => { });
+            }
         }
     });
 }
@@ -129,6 +140,12 @@ function broadcastRecordingState(enabled) {
 // Tab Updates for OSP
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     if (changeInfo.status === 'complete' && tab.active) {
+        // Skip internal browser pages - don't send page_loaded for these
+        if (tab.url.startsWith('chrome://') || tab.url.startsWith('edge://') || tab.url.startsWith('about:')) {
+            console.log('[OSP] Skipping internal page:', tab.url);
+            return;
+        }
+
         let platform = 'unknown';
         if (tab.url.includes('skool.com')) platform = 'skool';
         else if (tab.url.includes('instagram.com')) platform = 'instagram';
@@ -144,11 +161,21 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 
         // Re-apply recording mode if active (Content Script resets on reload)
         if (isRecording) {
-            setTimeout(() => {
+            // Clear any existing timer first
+            if (reapplyTimerId) {
+                clearTimeout(reapplyTimerId);
+            }
+            reapplyTimerId = setTimeout(() => {
+                reapplyTimerId = null;
+                // Double-check we're still recording before sending
+                if (!isRecording) {
+                    console.log('[OSP] Recording stopped before re-apply timer fired, skipping');
+                    return;
+                }
                 chrome.tabs.sendMessage(tabId, {
                     action: 'OSP_MESSAGE',
                     ospType: 'start_recording',
-                    payload: {}
+                    payload: { reapply: true }  // Mark as re-apply for debugging
                 }).catch(() => { });
             }, 500); // Small delay to ensure script is ready
         }

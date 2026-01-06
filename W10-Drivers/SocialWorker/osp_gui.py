@@ -11,6 +11,7 @@ import sys
 import os
 import json
 import time
+from datetime import datetime
 import shutil
 import logging
 import re
@@ -25,7 +26,7 @@ from enum import Enum
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QScrollArea, QFrame, QMessageBox, QSizePolicy,
-    QListWidget, QAbstractItemView, QListWidgetItem
+    QListWidget, QAbstractItemView, QListWidgetItem, QSplitter
 )
 from PyQt6.QtCore import Qt, QTimer, QSize, QUrl, pyqtSignal, QObject
 from PyQt6.QtGui import QPixmap, QImage, QShortcut, QKeySequence, QIcon, QAction, QDesktopServices, QColor
@@ -277,11 +278,17 @@ class WebSocketServer:
         
         log_ws(f"-> SENDING: {msg_type} payload={payload}")
         message = json.dumps({"type": msg_type, "payload": payload or {}})
-        asyncio.run_coroutine_threadsafe(self._send_all(message), self.loop)
+        asyncio.run_coroutine_threadsafe(self.broadcast(message), self.loop)
         
-    async def _send_all(self, message):
+    async def broadcast(self, message):
         if self.clients:
-            await asyncio.gather(*[client.send(message) for client in self.clients])
+            # Create a list of tasks for sending messages
+            send_tasks = []
+            for client in list(self.clients): # Iterate over a copy to allow modification during iteration
+                send_tasks.append(client.send(message))
+            
+            # Run all send tasks concurrently, ignoring individual errors
+            await asyncio.gather(*send_tasks, return_exceptions=True)
 
 
 # =============================================================================
@@ -292,35 +299,58 @@ class WorkflowEditor(QMainWindow):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("OSP Workflow Editor")
-        self.resize(900, 600)
-        self.setStyleSheet("background-color: #1e1e1e; color: #e0e0e0;")
+        self.resize(1100, 700)
+        self.setStyleSheet("""
+            QMainWindow { background-color: #1e1e1e; color: #e0e0e0; }
+            QListWidget { background-color: #252526; border: 1px solid #333; color: #e0e0e0; }
+            QListWidget::item:selected { background-color: #37373d; }
+            QLabel { color: #ccc; }
+        """)
         
         # Central Widget
         central = QWidget()
         self.setCentralWidget(central)
-        layout = QHBoxLayout(central)
+        main_layout = QHBoxLayout(central)
         
-        # --- LEFT: FILES ---
-        file_layout = QVBoxLayout()
-        file_label = QLabel("Recordings")
+        # Splitter for 3 Panels
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+        
+        # --- LEFT: PLATFORMS ---
+        plat_widget = QWidget()
+        plat_layout = QVBoxLayout(plat_widget)
+        plat_layout.setContentsMargins(0, 0, 0, 0)
+        plat_label = QLabel("1. Platform")
+        plat_label.setStyleSheet("font-weight: bold; font-size: 14px; color: #fff;")
+        plat_layout.addWidget(plat_label)
+        
+        self.plat_list = QListWidget()
+        self.plat_list.itemClicked.connect(self.filter_files_by_platform)
+        plat_layout.addWidget(self.plat_list)
+        splitter.addWidget(plat_widget)
+        
+        # --- MIDDLE: RECORDINGS ---
+        file_widget = QWidget()
+        file_layout = QVBoxLayout(file_widget)
+        file_layout.setContentsMargins(0, 0, 0, 0)
+        file_label = QLabel("2. Recordings (Newest First)")
         file_label.setStyleSheet("font-weight: bold; font-size: 14px; color: #fff;")
         file_layout.addWidget(file_label)
         
         self.file_list = QListWidget()
-        self.file_list.setStyleSheet("background-color: #252526; border: 1px solid #333;")
         self.file_list.itemClicked.connect(self.load_steps)
         file_layout.addWidget(self.file_list)
         
-        refresh_btn = QPushButton("Refresh Files")
-        refresh_btn.setStyleSheet("background-color: #333; padding: 5px;")
-        refresh_btn.clicked.connect(self.load_files)
-        file_layout.addWidget(refresh_btn)
+        self.file_info_label = QLabel("Select a file...")
+        self.file_info_label.setStyleSheet("color: #888; font-size: 11px;")
+        file_layout.addWidget(self.file_info_label)
         
-        layout.addLayout(file_layout, stretch=1)
+        splitter.addWidget(file_widget)
         
-        # --- MIDDLE: STEPS ---
-        step_layout = QVBoxLayout()
-        step_label = QLabel("Workflow Steps")
+        # --- RIGHT: STEPS ---
+        step_widget = QWidget()
+        step_layout = QVBoxLayout(step_widget)
+        step_layout.setContentsMargins(0, 0, 0, 0)
+        step_label = QLabel("3. Steps Editor")
         step_label.setStyleSheet("font-weight: bold; font-size: 14px; color: #fff;")
         step_layout.addWidget(step_label)
         
@@ -328,10 +358,13 @@ class WorkflowEditor(QMainWindow):
         self.step_list.setStyleSheet("background-color: #252526; border: 1px solid #333; font-family: Consolas;")
         self.step_list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         step_layout.addWidget(self.step_list)
+        splitter.addWidget(step_widget)
+        splitter.setSizes([150, 250, 600])
         
-        layout.addLayout(step_layout, stretch=2)
+        # Add Splitter to Main Layout
+        main_layout.addWidget(splitter, stretch=4)
         
-        # --- RIGHT: CONTROLS ---
+        # --- FAR RIGHT: CONTROLS ---
         ctrl_layout = QVBoxLayout()
         ctrl_label = QLabel("Actions")
         ctrl_label.setStyleSheet("font-weight: bold; font-size: 14px; color: #fff;")
@@ -349,10 +382,19 @@ class WorkflowEditor(QMainWindow):
         self.btn_down.clicked.connect(self.move_down)
         ctrl_layout.addWidget(self.btn_down)
         
-        self.btn_del = QPushButton("Delete 🗑️")
+        self.btn_del = QPushButton("Delete Step")
         self.btn_del.setStyleSheet("background-color: #ef4444; color: white; padding: 8px; border-radius: 4px;")
         self.btn_del.clicked.connect(self.delete_step)
         ctrl_layout.addWidget(self.btn_del)
+        
+        # Spacer
+        ctrl_layout.addSpacing(10)
+        
+        self.btn_del_file = QPushButton("Delete Rec 🗑️")
+        self.btn_del_file.setStyleSheet("background-color: #7f1d1d; color: #fca5a5; padding: 8px; border-radius: 4px; border: 1px solid #ef4444;")
+        self.btn_del_file.setToolTip("Delete the entire recording file")
+        self.btn_del_file.clicked.connect(self.delete_recording)
+        ctrl_layout.addWidget(self.btn_del_file)
         
         ctrl_layout.addStretch()
         
@@ -361,31 +403,88 @@ class WorkflowEditor(QMainWindow):
         self.btn_save.clicked.connect(self.save_workflow)
         ctrl_layout.addWidget(self.btn_save)
         
-        layout.addLayout(ctrl_layout, stretch=1)
+        main_layout.addLayout(ctrl_layout, stretch=1)
         
+        # Data State
         self.current_data = [] 
         self.current_file_path = None
+        self.all_files = [] # Store (Path, mtime, platform)
         
-        self.load_files()
+        self.load_data_model()
 
-    def load_files(self):
+    def load_data_model(self):
+        """Scan all files and build platform list."""
+        self.plat_list.clear()
         self.file_list.clear()
-        if not RECORDING_DIR.exists():
-            return
+        self.all_files = []
         
-        files = sorted(RECORDING_DIR.glob("*.json"), key=os.path.getmtime, reverse=True)
-        for f in files:
-            item = QListWidgetItem(f.name)
-            item.setData(Qt.ItemDataRole.UserRole, str(f))
-            self.file_list.addItem(item)
+        if not RECORDING_DIR.exists(): return
+        
+        # 1. Scan Files
+        raw_files = sorted(RECORDING_DIR.glob("*.json"), key=os.path.getmtime, reverse=True)
+        platforms = set()
+        
+        for f in raw_files:
+            # Parse: recording_{platform}_{variant}.json
+            parts = f.stem.split('_')
+            platform = "Unknown"
+            if len(parts) >= 2:
+                platform = parts[1].capitalize()
             
+            platforms.add(platform)
+            self.all_files.append({
+                "path": f,
+                "name": f.name,
+                "platform": platform,
+                "mtime": datetime.fromtimestamp(f.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
+            })
+            
+        # 2. Populate Platforms
+        item_all = QListWidgetItem("All Platforms")
+        item_all.setData(Qt.ItemDataRole.UserRole, "All")
+        self.plat_list.addItem(item_all)
+        
+        for p in sorted(platforms):
+            item = QListWidgetItem(p)
+            item.setData(Qt.ItemDataRole.UserRole, p)
+            self.plat_list.addItem(item)
+            
+        # Select "All" by default
+        self.plat_list.setCurrentRow(0)
+        self.filter_files_by_platform(item_all)
+
+    def filter_files_by_platform(self, item):
+        target_plat = item.data(Qt.ItemDataRole.UserRole)
+        self.file_list.clear()
+        self.step_list.clear()
+        self.current_data = []
+        self.current_file_path = None
+        self.file_info_label.setText("Select a file...")
+        
+        for f in self.all_files:
+            if target_plat == "All" or f["platform"] == target_plat:
+                # Display: Filename \n Date
+                disp = f"{f['name']}\n{f['mtime']}"
+                list_item = QListWidgetItem(disp)
+                list_item.setData(Qt.ItemDataRole.UserRole, str(f["path"]))
+                self.file_list.addItem(list_item)
+
     def load_steps(self, item=None):
         if item:
             path = Path(item.data(Qt.ItemDataRole.UserRole))
             self.current_file_path = path
+            
+            # Find meta for label
+            meta = next((x for x in self.all_files if x["path"] == path), None)
+            
             try:
                 with open(path, 'r', encoding='utf-8') as f:
                     self.current_data = json.load(f)
+                
+                # Update Info Label
+                if meta:
+                    self.file_info_label.setText(f"{meta['mtime']} | {len(self.current_data)} Steps")
+                    
             except Exception as e:
                 print(f"Error loading {path}: {e}")
                 self.current_data = []
@@ -439,6 +538,29 @@ class WorkflowEditor(QMainWindow):
                 self.step_list.setCurrentRow(row)
             elif self.step_list.count() > 0:
                 self.step_list.setCurrentRow(self.step_list.count() - 1)
+                
+    def delete_recording(self):
+        if not self.current_file_path:
+            QMessageBox.warning(self, "No Selection", "Please select a recording to delete.")
+            return
+            
+        confirm = QMessageBox.question(
+            self, 
+            "Confirm Delete", 
+            f"Are you sure you want to PERMANENTLY delete:\n{self.current_file_path.name}?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        
+        if confirm == QMessageBox.StandardButton.Yes:
+            try:
+                os.remove(self.current_file_path)
+                self.current_file_path = None
+                self.current_data = []
+                self.step_list.clear()
+                self.load_data_model() # Refresh lists
+                QMessageBox.information(self, "Deleted", "Recording deleted successfully.")
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to delete file: {e}")
             
     def save_workflow(self):
         if self.current_file_path:
@@ -446,6 +568,7 @@ class WorkflowEditor(QMainWindow):
                  with open(self.current_file_path, 'w', encoding='utf-8') as f:
                     json.dump(self.current_data, f, indent=2)
                  QMessageBox.information(self, "Saved", f"Workflow saved to {self.current_file_path.name}")
+                 self.load_data_model() # Refresh timestamps
              except Exception as e:
                  QMessageBox.critical(self, "Error", f"Failed to save: {e}")
 
@@ -477,10 +600,13 @@ class PrompterWindow(QMainWindow):
         
         # State
         self.is_recording = False
+        self.recording_started = False  # Track if new recording session started
         self.playback_steps = []
         self.current_playback_index = 0
         self.current_step = 0
         self.target_width = 300
+        self.last_guidance_field = None
+        self.last_guidance_text = None
         
         # UI Setup
         self._setup_window()
@@ -550,7 +676,9 @@ class PrompterWindow(QMainWindow):
             QListWidget::item { padding: 2px; }
         """)
         self.log_list.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.log_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.log_list.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
+        self.log_list.setWordWrap(True)
         layout.addWidget(self.log_list)
 
         # --- TOP STATUS BAR ---
@@ -706,106 +834,123 @@ class PrompterWindow(QMainWindow):
         msg_type = data.get("type")
         payload = data.get("payload", {})
         
+        # DEBUG: Log everything from Chrome (except heartbeats)
+        if msg_type != "content_ready":
+            log_ws(f"RECV RAW: {msg_type}")
+        
+        # 1. Page Lifecycle
         if msg_type == "page_loaded":
             if self.is_recording:
-                log_ws("Page loaded (Recording Mode) - Skipping auto-guide")
+                log_ws("Page loaded (Recording Mode) - Recording event for sync")
+                self.record_interaction({"action": "page_loaded", "url": payload.get("url")}, source="chrome")
+                
+                # TRIGGER WIZARD: Start with Title guidance
+                self.send_guidance("title", "Step 1: Click the TITLE input field horizontally")
                 return
 
             if self.playback_steps:
-                log_ws("Page loaded (Playback Mode) - Skipping auto-guide")
+                now = time.time()
+                if not hasattr(self, 'last_nav_trigger') or (now - self.last_nav_trigger > 1.0):
+                    self.last_nav_trigger = now
+                    log_ws("Page loaded (Playback Mode) - Triggering Next Step (with 800ms delay)")
+                    QTimer.singleShot(800, self.advance_playback)
                 return
 
-            # Page loaded -> Prompt to copy title
-            self.set_instruction_step("COPY TITLE", "#22c55e", self.copy_title_action)
-            self.ws_server.send("highlight_element", {
-                "selector": "[data-placeholder='Title'], .title-input, input[name='title']",
-                "label": "CLICK HERE - Title"
-            })
+        elif msg_type == "content_ready":
+            if self.playback_steps:
+                now = time.time()
+                if not hasattr(self, 'last_nav_trigger') or (now - self.last_nav_trigger > 1.0):
+                    self.last_nav_trigger = now
+                    log_ws("Content ready (Playback Mode) - Triggering Next Step (immediately)")
+                    self.advance_playback()
+                return
+
+            # No macro loaded - just show generic button, UNLESS recording
+            if not self.is_recording:
+                self.set_instruction_step("OPEN URL", "#22c55e", self.open_link_action)
             
+        # 2. Interactions (Recording & Playback)
+        elif msg_type == "interaction_recorded":
+            self.record_interaction(payload)
+            return
+
+        elif msg_type == "paste_detected":
+            if self.is_recording:
+                record_payload = payload.copy()
+                record_payload['action'] = 'paste'
+                self.record_interaction(record_payload, source="chrome")
+                return
+
+            # Playback Match
+            match_idx = self.check_playback_match({'type': 'paste', 'action': 'paste'}, lookahead=5)
+            if match_idx != -1:
+                log_ws(f"Playback: Paste Matched step {match_idx}")
+                self.current_playback_index = match_idx + 1
+                self.advance_playback()
+            else:
+                # Fallback paste logic if no macro
+                selector = payload.get("selector", "")
+                if "title" in selector.lower():
+                    self.set_instruction_step("COPY BODY", "#22c55e", self.copy_body_action)
+                    self.ws_server.send("highlight_element", {
+                        "selector": "[data-placeholder='Write something...'], textarea, .body-input",
+                        "label": "CLICK HERE - Body"
+                    })
+                elif "write" in selector.lower() or "body" in selector.lower():
+                    self.set_instruction_step("CLICK POST", "#22c55e", self.mark_complete)
+                    self.btn_instruction.setText("MARK DONE")
+                    self.btn_instruction.setStyleSheet("background-color: #22c55e; color: white; font-weight: bold; border-radius: 6px;")
+
+        elif msg_type == "highlight_clicked":
+            if self.playback_steps and self.current_playback_index < len(self.playback_steps):
+                step = self.playback_steps[self.current_playback_index]
+                if step.get('source') == 'chrome':
+                    self.current_playback_index += 1
+                    log_ws(f"Playback advanced to index {self.current_playback_index}")
+                    self.advance_playback()
+
+        # 3. Mode Control
+        elif msg_type == "start_recording":
+            if self.is_recording: return
+            self.is_recording = True
+            self.recording_started = True
+            self.playback_steps = []
+            self.current_playback_index = 0
+            
+            log_ws("Entered Recording Mode")
+            self.mode_label.setText("● Recording")
+            self.mode_label.setStyleSheet("color: #ef4444; font-weight: bold; font-size: 11px; margin-left: 10px;")
+            self.btn_instruction.setText("REC: waiting...")
+            self.btn_instruction.setStyleSheet("""
+                QPushButton {
+                    background-color: #7f1d1d; color: #fca5a5; border: none; 
+                    border-radius: 6px; font-weight: bold; font-size: 16px;
+                    border: 2px solid #ef4444;
+                }
+            """)
+            self.btn_instruction.setEnabled(True)
+
+        elif msg_type == "stop_recording":
+            self.is_recording = False
+            log_ws("Exited Recording Mode")
+            self.set_instruction_step("SAVING MACRO...", "#eab308", lambda: None)
+            QTimer.singleShot(1500, self.reset_flow)
+
+        # 4. Miscellaneous
         elif msg_type == "request_copy":
             field = payload.get("field")
             if field == "title":
                 self.set_instruction_step("COPY TITLE", "#22c55e", self.copy_title_action)
             elif field == "body":
                 self.set_instruction_step("COPY BODY", "#22c55e", self.copy_body_action)
-                
-        if msg_type == "interaction_recorded":
-            self.record_interaction(payload)
-            
-            # Playback Sync with Lookahead
-            match_idx = self.check_playback_match(payload)
-            if match_idx != -1:
-                log_ws(f"Playback: Matched step {match_idx} (Current: {self.current_playback_index})")
-                self.current_playback_index = match_idx + 1
-                self.advance_playback()
-
-        elif msg_type == "paste_detected":
-            selector = payload.get("selector", "")
-            
-            if self.is_recording:
-                # Record paste event
-                record_payload = payload.copy()
-                record_payload['action'] = 'paste'
-                self.record_interaction(record_payload, source="chrome")
-                return
-
-            # Construct pseudo-payload for matching
-            pseudo_payload = payload.copy()
-            pseudo_payload['type'] = 'paste' # or whatever your macro saves pastes as (check recording)
-            # Actually, the recording saves it as source='chrome', interaction={'type': 'paste', ...} usually? 
-            # Let's double check check_playback_match logic below.
-            
-            # We treat 'paste_detected' as an improved interaction event
-            match_idx = self.check_playback_match({'type': 'paste', 'action': 'paste'}, lookahead=5)
-            if match_idx != -1:
-                log_ws(f"Playback: Paste Matched step {match_idx}")
-                self.current_playback_index = match_idx + 1
-                self.advance_playback()
-                return
-
-            if "title" in selector.lower():
-                # Title pasted -> Move to body
-                self.set_instruction_step("COPY BODY", "#22c55e", self.copy_body_action)
-                self.ws_server.send("highlight_element", {
-                    "selector": "[data-placeholder='Write something...'], textarea, .body-input",
-                    "label": "CLICK HERE - Body"
-                })
-            elif "write" in selector.lower() or "body" in selector.lower():
-                # Body pasted -> Move to submit
-                self.set_instruction_step("CLICK POST", "#22c55e", self.mark_complete) # Or just indicate done?
-                self.ws_server.send("highlight_element", {
-                    "selector": "button[type='submit'], .post-button",
-                    "label": "CLICK TO POST"
-                })
-                self.btn_instruction.setText("MARK DONE")
-                self.btn_instruction.setStyleSheet("background-color: #22c55e; color: white; font-weight: bold; border-radius: 6px;")
-
-
 
         elif msg_type == "element_not_found":
-            selector = payload.get("selector", "unknown")
-            log_ws(f"Element not found: {selector}")
-            # Non-blocking: Just update status text, don't change button state
-            self.conn_label.setText(f"Missing: {selector}")
-            self.conn_label.setStyleSheet("color: #eab308; font-size: 11px;") # Yellow warning
+            log_ws(f"Element not found: {payload.get('selector', 'unknown')}")
 
-        elif msg_type == "start_recording":
-            self.is_recording = True
-            log_ws("Entered Recording Mode")
-            # Update Mode Indicator in Header (Red)
-            self.mode_label.setText("● Recording")
-            self.mode_label.setStyleSheet("color: #ef4444; font-weight: bold; font-size: 11px; margin-left: 10px;")
-            
-            # Keep Connected Green
-            self.conn_label.setText("● Connected")
-            self.conn_label.setStyleSheet("color: #22c55e; font-size: 11px;")
-
-        elif msg_type == "stop_recording":
-            self.is_recording = False
-            log_ws("Exited Recording Mode")
-            # Show saving state
-            self.set_instruction_step("SAVING MACRO...", "#eab308", lambda: None)
-            QTimer.singleShot(1500, self.reset_flow)
+        # Final catch for playback matching if not in recording mode and not handled above
+        if not self.is_recording and msg_type == "interaction_recorded":
+            # This is a bit redundant now with the elif chain but good for safety
+            pass
 
     # --- ACTION LOGIC ---
     def get_job_variant(self, job):
@@ -827,10 +972,14 @@ class PrompterWindow(QMainWindow):
             
         return "default"
 
-    def record_interaction(self, payload: Dict, source: str = "chrome"):
+    def record_interaction(self, payload: Dict, source: str = "chrome", label: str = None):
         """Save recorded interaction to file."""
+        # Don't record during playback - only during actual recording mode
+        # ALLOW recording if self.recording_started is True (to catch Step #1)
+        if not self.is_recording and not self.recording_started:
+            return
+            
         try:
-            # timestamp = time.strftime("%Y%m%d") # No longer needed for unique files
             job = self.queue.current_job
             platform = job.platform.value if job else "unknown"
             variant = self.get_job_variant(job)
@@ -839,29 +988,88 @@ class PrompterWindow(QMainWindow):
             filename = f"recording_{platform}_{variant}.json"
             filepath = RECORDING_DIR / filename
             
-            # Read existing
+            # If this is first record of new session, start fresh (don't append to old)
             recordings = []
-            if filepath.exists():
+            if self.recording_started:
+                # New session - clear old recordings
+                self.recording_started = False
+                log_ws(f"New recording session - clearing {filename}")
+            elif filepath.exists():
+                # Continuing session - read existing
                 try:
                     with open(filepath, 'r', encoding='utf-8') as f:
                         recordings = json.load(f)
                 except:
                     pass
             
-            # Append new
+            # Append new entry
+            # CLEAN SELECTOR: Remove brittle state classes like .is-empty, .is-focused, etc.
+            if source == "chrome":
+                selector = payload.get("selector", "")
+                # Clean specific brittle classes using regex for accuracy
+                import re
+                # 1. Transient/State classes
+                bad_classes = ['is-empty', 'is-focused', 'is-editor-empty', 'ProseMirror', 'ProseMirror-focused']
+                # 2. Styled-component hashes (e.g. styled__..., sc-..., -sc-...)
+                # Matches .styled__x, .sc-x, etc. or class containing -sc-
+                hash_patterns = [r'\.styled__[a-zA-Z0-9_-]+', r'\.sc-[a-zA-Z0-9_-]+', r'\.[a-zA-Z0-9_-]+-sc-[a-zA-Z0-9_-]+']
+                
+                for cls in bad_classes:
+                    pattern = rf'\.{re.escape(cls)}(?=[.>\s]|$)'
+                    selector = re.sub(pattern, '', selector)
+                
+                for pattern in hash_patterns:
+                    selector = re.sub(pattern, '', selector)
+                
+                # Clean up any Double Spaces or leading/trailing separators left over
+                selector = selector.replace("  ", " ").replace(" >  >", " >").strip()
+                selector = re.sub(r'\s*>\s*', ' > ', selector) # Normalize spacing around arrows
+                payload["selector"] = selector
+
+            # Auto-generate Label if missing
+            if not label:
+                if source == "osp":
+                    # For OSP actions, use a clean uppercase name
+                    label = f"{payload.get('action', 'action').upper().replace('_', ' ')}"
+                elif source == "chrome":
+                    action = payload.get('type') or payload.get('action') or "interaction"
+                    selector = payload.get('selector', '')
+                    element_type = payload.get('element_type', '').upper()
+                    
+                    if "title" in selector.lower():
+                        label = f"TYPE TITLE" if action == "paste" else "CLICK TITLE INPUT"
+                    elif "placeholder" in selector.lower() and ("write" in selector.lower() or "body" in selector.lower()):
+                        label = f"TYPE BODY" if action == "paste" else "CLICK BODY INPUT"
+                    elif "submit" in selector.lower() or "jhqXbj" in selector or "post" in selector.lower():
+                        label = f"CLICK POST BUTTON"
+                    elif action == "paste":
+                        label = f"PASTE INTO {element_type if element_type else 'BOX'}"
+                    else:
+                        label = f"CLICK {element_type if element_type else 'ELEMENT'}"
+
             entry = {
                 "timestamp": time.time(),
                 "job_id": job.job_id if job else None,
                 "source": source,
+                "label": label,
                 "interaction": payload
             }
             recordings.append(entry)
+            
+            # Update UI with step count for live feedback
+            step_num = len(recordings)
+            action_desc = payload.get('type') or payload.get('action') or "click"
+            selector = payload.get('selector', '')
+            if len(selector) > 15:
+                selector = selector[:15] + "..."
+            
+            self.btn_instruction.setText(f"REC: {label[:15]}... ({step_num})")
             
             # Write back
             with open(filepath, 'w', encoding='utf-8') as f:
                 json.dump(recordings, f, indent=2)
                 
-            log_ws(f"Recorded ({source}): {payload.get('action') or 'click'} -> {filename}")
+            log_ws(f"Recorded ({source}): {action_desc} -> {filename} (Step {step_num})")
             
         except Exception as e:
             log_ws(f"Failed to record interaction: {e}")
@@ -888,10 +1096,13 @@ class PrompterWindow(QMainWindow):
                 self.mode_label.setStyleSheet("color: #eab308; font-weight: bold; font-size: 11px; margin-left: 10px;")
                 
                 self.advance_playback()
+                return True
             except Exception as e:
                 log_ws(f"Error loading macro: {e}")
+                return False
         else:
             log_ws(f"No macro found for {variant}")
+            return False
 
     def check_playback_match(self, payload, lookahead=3):
         """Check if payload matches current or future steps."""
@@ -922,47 +1133,98 @@ class PrompterWindow(QMainWindow):
         return -1
 
     def advance_playback(self):
-        """Update UI to show next expected step."""
+        """Update UI to show next expected step and send Chrome highlight."""
         if not self.playback_steps: return
         
-        # Find next relevant step (skipping past ones)
+        log_ws(f"advance_playback: starting at index {self.current_playback_index}")
+        
+        # Skip any already-completed OSP steps (like open_url which triggered page_loaded)
         while self.current_playback_index < len(self.playback_steps):
             step = self.playback_steps[self.current_playback_index]
             source = step.get('source')
             interaction = step.get('interaction', {})
             
+            # For OSP steps: show the label AND look ahead for next Chrome highlight
             if source == 'osp':
-                # Map action to readable text
                 action = interaction.get('action')
-                label = action.upper().replace("_", " ") # copy_title -> COPY TITLE
-                self.set_instruction_step(f"MACRO: {label}", "#8b5cf6", lambda: None) # Violet
+                # Skip open_url since that already happened
+                if action == 'open_url':
+                    self.current_playback_index += 1
+                    continue
+                    
+                label = action.upper().replace("_", " ")
+                self.set_instruction_step(f"→ {label}", "#8b5cf6", lambda: None)
+                
+                # IMPORTANT: Look ahead and send highlight for next Chrome step
+                self._send_next_chrome_highlight()
                 return
             
             elif source == 'chrome':
-                # Active Guidance for Chrome Actions
-                action_type = interaction.get('type') # click
-                action_name = interaction.get('action') # paste
+                action_type = interaction.get('type')
+                action_name = interaction.get('action')
                 selector = interaction.get('selector')
                 
-                label = "CLICK HIGHLIGHT"
-                color = "#3b82f6" # Blue
+                # Skip page_loaded events during playback (they are sync points, not interaction steps)
+                if action_name == 'page_loaded' or action_type == 'page_loaded':
+                    self.current_playback_index += 1
+                    continue
+
+                # Use the label from the recording if available, else fallback to generic
+                label = step.get('label')
+                if not label or label == "CLICK HIGHLIGHT" or label == "PASTE CONTENT":
+                    label = "PASTE CONTENT" if action_name == "paste" else "CLICK HIGHLIGHT"
                 
-                if action_name == "paste":
-                    label = "PASTE CONTENT"
-                    color = "#eab308" # Yellow/Orange for attention
+                color = "#3b82f6"
+                if "PASTE" in label or "TYPE" in label:
+                    color = "#eab308"
+                elif "POST" in label or "SUBMIT" in label:
+                    color = "#ef4444"
                 
-                # Send highlight to Chrome
+                # Send highlight to Chrome ONLY if we have a selector
+                if selector:
+                    log_ws(f"advance_playback: sending highlight for {selector[:30]}...")
+                    self.ws_server.send("highlight_element", {
+                        "selector": selector,
+                        "label": label
+                    })
+                else:
+                    log_ws("advance_playback: skipping step with empty selector")
+                    self.current_playback_index += 1
+                    continue
+                
+                self.set_instruction_step(f"→ {label}", color, lambda: None)
+                return
+            
+            self.current_playback_index += 1
+            
+        self.set_instruction_step("WORKFLOW COMPLETED", "#22c55e", lambda: None)
+    
+    def _send_next_chrome_highlight(self):
+        """Look ahead from current position and send highlight for next Chrome step."""
+        for i in range(self.current_playback_index + 1, len(self.playback_steps)):
+            step = self.playback_steps[i]
+            if step.get('source') == 'chrome':
+                interaction = step.get('interaction', {})
+                selector = interaction.get('selector')
+                action_name = interaction.get('action') or interaction.get('type')
+                
+                # SKIP page loads or empty selectors
+                if action_name == 'page_loaded' or not selector:
+                    log_ws("_send_next_chrome_highlight: skipping empty selector or page_loaded")
+                    continue
+
+                label = step.get('label')
+                if not label or label == "CLICK HIGHLIGHT" or label == "PASTE CONTENT":
+                    label = "PASTE HERE" if action_name == "paste" else "CLICK HERE"
+                
+                log_ws(f"_send_next_chrome_highlight: sending highlight for {selector[:30]}...")
                 self.ws_server.send("highlight_element", {
                     "selector": selector,
                     "label": label
                 })
-                
-                self.set_instruction_step(f"-> {label}", color, lambda: None)
-                return # Stop and wait for user action
-            
-            self.current_playback_index += 1
-            
-        self.set_instruction_step("MACRO DONE", "#22c55e", lambda: None)
+                return
+        
+        log_ws("_send_next_chrome_highlight: no more Chrome steps found")
 
     def trigger_playback_step(self, action_name):
         """Called when a button is clicked. Advances macro if it matches."""
@@ -979,6 +1241,12 @@ class PrompterWindow(QMainWindow):
                     QTimer.singleShot(500, self.advance_playback)
 
     def reset_flow(self):
+        # GUARD: Don't reset if we are actively recording! 
+        # This prevents the poll timer from killing a session.
+        if self.is_recording:
+            log_ws("reset_flow: Blocked by active recording")
+            return
+
         # Reset Mode Label
         self.mode_label.setText("")
         
@@ -1015,42 +1283,93 @@ class PrompterWindow(QMainWindow):
 
     def open_link_action(self):
         log_ws("UI: Open URL Button Clicked")
-        self.record_interaction({"action": "open_url"}, source="osp")
+        
+        if self.is_recording:
+            # ALREADY RECORDING - CONTINUE SESSION
+            log_ws("Already in Recording Mode - Recording Open URL as a step")
+            # If this is the VERY first step, we might want to restart, but usually user just clicked Record -> then Open URL
+            # So we record it.
+            self.record_interaction({"action": "open_url"}, source="osp", label="Launch Browser & Navigation")
+            # Signal Chrome just in case
+            self.ws_server.send("start_recording", {"reapply": True})
+        else:
+            # NOT RECORDING - TRY PLAYBACK OR START NEW RECORDING
+            macro_loaded = self.load_playback_macro()
+            
+            if macro_loaded:
+                # PLAYBACK MODE
+                log_ws("Macro found - Starting Playback")
+                self.is_recording = False
+                self.recording_started = False
+            else:
+                # NO MACRO - START NEW RECORDING SESSION
+                log_ws("No macro found - Starting New Recording Session")
+                self.is_recording = True
+                self.recording_started = True 
+                
+                # Record Step 1 (Open URL)
+                self.record_interaction({"action": "open_url"}, source="osp", label="Launch Browser & Navigation")
+                
+                # Synchronize Chrome with Recording Mode
+                self.ws_server.send("start_recording", {})
+                
+                # Update Mode Indicator for Recording
+                self.mode_label.setText("● Recording")
+                self.mode_label.setStyleSheet("color: #ef4444; font-weight: bold; font-size: 11px; margin-left: 10px;")
+
+        # Track the step internally
         self.trigger_playback_step("open_url")
         
         job = self.queue.current_job
         if job and job.link:
             self.ws_server.send("open_url", {"url": job.link})
-            self.set_instruction_step("WAITING FOR CHROME...", "#eab308", lambda: None) # Yellow
+            self.set_instruction_step("WAITING FOR CHROME INFO...", "#eab308", lambda: None)
             self.btn_instruction.setEnabled(False)
-            # Re-enable after 5s timestamp to prevent lock
-            QTimer.singleShot(5000, lambda: self.btn_instruction.setEnabled(True))
-            
-            # Initialize Playback
-            if not self.is_recording:
-                QTimer.singleShot(1000, self.load_playback_macro)
+            QTimer.singleShot(4000, lambda: self.btn_instruction.setEnabled(True))
         else:
-            self.open_link() # Fallback
+            self.open_link()
 
     def copy_title_action(self):
         log_ws("UI: Copy Title Clicked")
-        self.record_interaction({"action": "copy_title"}, source="osp")
+        self.record_interaction({"action": "copy_title"}, source="osp", label="Copy Title from OSP")
         self.trigger_playback_step("copy_title")
         job = self.queue.current_job
         if job:
             pyperclip.copy(job.title)
             self._flash_btn(self.btn_copy_title)
-            self.set_instruction_step("PASTE IN CHROME", "#3b82f6", lambda: None) # Blue
+            self.set_instruction_step("PASTE IN CHROME", "#3b82f6", lambda: None)
+            
+            # TRIGGER WIZARD: Support visual guidance in Chrome
+            self.send_guidance("title", "Title copied! Now CLICK & PASTE it into the highlighted box")
+
+            # DIRECTIVE: Record that we are asking Chrome to highlight the Title
+            self.record_interaction({
+                "action": "directive", 
+                "directive": "highlight_element",
+                "selector": "[placeholder='Title'], .title-input",
+                "label": "Highlight Title Input"
+            }, source="osp", label="Directive: Point to Title Input") # Blue
 
     def copy_body_action(self):
         log_ws("UI: Copy Body Clicked")
-        self.record_interaction({"action": "copy_body"}, source="osp")
+        self.record_interaction({"action": "copy_body"}, source="osp", label="Copy Caption/Body from OSP")
         self.trigger_playback_step("copy_body")
         job = self.queue.current_job
         if job:
             pyperclip.copy(job.caption)
             self._flash_btn(self.btn_copy_body)
             self.set_instruction_step("PASTE IN CHROME", "#3b82f6", lambda: None)
+            
+            # TRIGGER WIZARD: Support visual guidance in Chrome
+            self.send_guidance("body", "Body copied! Now CLICK & PASTE it into the highlighted box")
+
+            # DIRECTIVE: Record highlight for Body
+            self.record_interaction({
+                "action": "directive",
+                "directive": "highlight_element",
+                "selector": "[data-placeholder='Write something...'], .tiptap.skool-editor, textarea",
+                "label": "Highlight Body Input"
+            }, source="osp", label="Directive: Point to Body Input")
 
     def copy_image_path_action(self):
         job = self.queue.current_job
@@ -1066,7 +1385,7 @@ class PrompterWindow(QMainWindow):
                 img = QImage(job.image_path)
                 QApplication.clipboard().setImage(img)
                 self._flash_btn(self.btn_copy_img_data)
-                self.record_interaction({"action": "copy_img_data"}, source="osp")
+                self.record_interaction({"action": "copy_img_data"}, source="osp", label="Copy Image Data")
                 self.trigger_playback_step("copy_img_data")
             except Exception as e:
                 print(f"Failed to copy image: {e}")
@@ -1081,6 +1400,10 @@ class PrompterWindow(QMainWindow):
             self.update_display()
 
     def update_display(self):
+        # Reset guidance tracking so highlights can be re-triggered for new jobs
+        self.last_guidance_field = None
+        self.last_guidance_text = None
+        
         job = self.queue.current_job
         if not job:
             self.platform_label.setText("Platform: ---")
@@ -1090,7 +1413,8 @@ class PrompterWindow(QMainWindow):
             self.btn_instruction.setStyleSheet("background-color: #333; color: #666;")
             return
 
-        self.reset_flow()
+        if not self.is_recording:
+            self.reset_flow()
         
         color = PLATFORM_COLORS.get(job.platform, "#888888")
         self.platform_label.setText(f"Platform: {job.platform.value.upper()}")
@@ -1117,7 +1441,7 @@ class PrompterWindow(QMainWindow):
 
     def mark_complete(self):
         log_ws("UI: Mark Complete Clicked")
-        self.record_interaction({"action": "mark_done"}, source="osp")
+        self.record_interaction({"action": "mark_done"}, source="osp", label="Workflow Completed Successfully")
         self.trigger_playback_step("mark_done")
         if self.queue.complete_current():
             self.refresh_queue()
@@ -1125,6 +1449,7 @@ class PrompterWindow(QMainWindow):
 
     def mark_failed(self):
         log_ws("UI: Mark Failed Clicked")
+        self.record_interaction({"action": "mark_failed"}, source="osp", label="Workflow Marked as Failed")
         if self.queue.fail_current("User marked failed"):
             self.refresh_queue()
             self.update_display()
@@ -1151,17 +1476,34 @@ class PrompterWindow(QMainWindow):
 
     def update_log_window(self, msg):
         """Add message to log window and keep last 3."""
-        # Strip timestamp for UI cleanliness if present (optional, but requested "rolling text")
-        # Assuming msg format "[HH:MM:SS] WS: ..." or similar
+        # Strip timestamp for UI cleanliness if present
         display_msg = msg
         if "] WS: " in msg:
             display_msg = msg.split("] WS: ")[1]
+        
+        # Truncate long messages to prevent UI overflow
+        max_len = 50
+        if len(display_msg) > max_len:
+            display_msg = display_msg[:max_len] + "..."
             
         self.log_list.addItem(display_msg)
         self.log_list.scrollToBottom()
         
         while self.log_list.count() > 3:
             self.log_list.takeItem(0)
+
+    def send_guidance(self, field: str, text: str):
+        """Send guidance to Chrome, but only if it's different from the last signal."""
+        if field == self.last_guidance_field and text == self.last_guidance_text:
+            return
+            
+        self.last_guidance_field = field
+        self.last_guidance_text = text
+        
+        if field:
+            self.ws_server.send("suggest_field", {"field": field})
+        if text:
+            self.ws_server.send("show_instruction", {"text": text})
 
     def open_workflow_editor(self):
         self.workflow_editor = WorkflowEditor(self)
