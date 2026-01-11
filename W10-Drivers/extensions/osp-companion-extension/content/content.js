@@ -74,14 +74,27 @@
     }
 
     function processRule(rule) {
+        // 1. Context Checking (Optional)
+        if (!isEditorMode) {
+            // A. Require Context (Show only if X is present)
+            if (rule.contextText) {
+                const pageText = document.body.innerText;
+                if (!pageText.includes(rule.contextText)) return;
+            }
+            // B. Exclude Context (Hide if Y is present)
+            if (rule.excludedContextText) {
+                const pageText = document.body.innerText;
+                if (pageText.includes(rule.excludedContextText)) return;
+            }
+        }
+
+        // 2. Element Selection
         let element = null;
         try {
             element = document.querySelector(rule.selector);
         } catch (e) { }
 
         if (element && isVisible(element)) {
-            // Verify if selector matches multiple
-            // In debug mode we might want to warn
             createHighlight(element, rule);
         }
     }
@@ -138,6 +151,7 @@
 
             if (labelPos === 'bottom') {
                 label.style.bottom = '-28px';
+                label.style.top = 'auto'; // ensure top is cleared
             } else if (labelPos === 'inside') {
                 label.style.top = '2px';
             } else {
@@ -177,7 +191,6 @@
             // Try to dump Props & State
             if (fiber.memoizedProps) console.log('Props:', fiber.memoizedProps);
             if (fiber.memoizedState) console.log('State:', fiber.memoizedState);
-            if (fiber.return) console.log('Parent Component:', fiber.return.type);
         } else {
             console.warn('No React Fiber data found on this element.');
         }
@@ -189,10 +202,6 @@
             console.log('Rule Config:', rule);
             const matchCount = document.querySelectorAll(rule.selector).length;
             console.log(`Selector "${rule.selector}" matches ${matchCount} element(s).`);
-            if (matchCount > 1) {
-                console.warn('⚠️ SELECTOR IS NOT UNIQUE! This causes drift.');
-                console.log('Matches:', document.querySelectorAll(rule.selector));
-            }
             console.groupEnd();
         }
 
@@ -210,35 +219,45 @@
 
     // ===== SELECTOR GENERATION (HARDENED) =====
     function generateSelector(el) {
-        const selector = _generateRawSelector(el);
+        // Try to generate a selector
+        let selector = _generateRawSelector(el);
 
         // Verify uniqueness
-        const matches = document.querySelectorAll(selector);
-        if (matches.length === 1) return selector;
+        let matches = document.querySelectorAll(selector);
 
-        console.warn(`[OSP] Generated selector "${selector}" is not unique (${matches.length}). attempting hardening...`);
-
-        // Hardening 1: Add parent context
-        if (el.parentElement) {
+        // If not unique, try adding parent context
+        if (matches.length > 1 && el.parentElement) {
             const parentSel = _generateRawSelector(el.parentElement);
             const combined = `${parentSel} > ${selector}`;
-            if (document.querySelectorAll(combined).length === 1) return combined;
+            if (document.querySelectorAll(combined).length === 1) {
+                return combined;
+            }
+            // If still not unique, try grand-parent
+            if (el.parentElement.parentElement) {
+                const grandParent = _generateRawSelector(el.parentElement.parentElement);
+                const combined2 = `${grandParent} > ${combined}`;
+                if (document.querySelectorAll(combined2).length === 1) {
+                    return combined2;
+                }
+            }
         }
 
-        // Hardening 2: Nth-of-type fallback (Very strict but reliable against drift within a list)
-        // This is dangerous if list order changes, but better than random jumping
-        const path = getStrictPath(el);
-        return path;
+        // Fallback to strict path if all else fails or if original was just a tag
+        if (matches.length !== 1) {
+            return getStrictPath(el);
+        }
+
+        return selector;
     }
 
     function _generateRawSelector(el) {
-        // 1. ID (only if looks stable - no numbers or long hashes)
+        // 1. ID (only if looks stable)
         if (el.id && !/\d{5,}/.test(el.id) && !/ember|react|uid/.test(el.id)) {
             return `#${CSS.escape(el.id)}`;
         }
 
         // 2. Stable Attributes (Prioritized)
-        const stableAttrs = ['data-testid', 'name', 'placeholder', 'aria-label', 'href', 'type'];
+        const stableAttrs = ['data-testid', 'name', 'placeholder', 'aria-label', 'href', 'title', 'role', 'for'];
         for (const attr of stableAttrs) {
             if (el.hasAttribute(attr)) {
                 return `[${attr}="${CSS.escape(el.getAttribute(attr))}"]`;
@@ -248,18 +267,42 @@
         // 3. Class (Filter junk)
         if (el.className && typeof el.className === 'string') {
             const classes = el.className.split(/\s+/).filter(c => {
-                // Ignore hash-like classes (common in styled-components, css modules)
                 if (c.length < 3) return false;
-                if (/[a-zA-Z0-9]{10,}/.test(c)) return false; // Long hashes
-                if (/hover:|focus:|active:/.test(c)) return false; // States
+
+                // Allow specific semantic React prefixes
+                if (c.startsWith('styled__') || c.startsWith('css-')) return true;
+
+                // Ban pure numeric/random hashes (e.g. "af3498")
+                // Only if they are short and random-looking, OR extremely long and random
+                if (/^[a-z0-9]{4,8}$/.test(c)) return false; // short random hash
+                if (/^[a-zA-Z0-9]{30,}$/.test(c) && !c.includes('-') && !c.includes('_')) return false; // super long unique hash
+
+                // Standard bans
+                if (/hover:|focus:|active:|visited:/.test(c)) return false;
                 if (c.includes('osp-')) return false;
+
                 return true;
             });
 
-            // Try first meaningful class
+            // Prefer classes that look "Meaningful" (contain capital letters or dashes) over generic ones
+            classes.sort((a, b) => {
+                let aScore = (a.includes('Wrapper') ? 10 : 0) + (a.includes('-') ? 2 : 0) + (/[A-Z]/.test(a) ? 1 : 0);
+                let bScore = (b.includes('Wrapper') ? 10 : 0) + (b.includes('-') ? 2 : 0) + (/[A-Z]/.test(b) ? 1 : 0);
+
+                // Boost specific keywords
+                if (a.includes('Submit') || a.includes('Primary') || a.includes('Confirm') || a.includes('Post')) aScore += 5;
+                if (b.includes('Submit') || b.includes('Primary') || b.includes('Confirm') || b.includes('Post')) bScore += 5;
+
+                if (aScore === bScore) {
+                    // Tie-Breaker: Prefer longer, more specific names
+                    // e.g. "SubmitButtonWrapper" (len 19) > "ButtonWrapper" (len 13)
+                    return b.length - a.length;
+                }
+
+                return bScore - aScore;
+            });
+
             if (classes.length > 0) {
-                // Try to verify if this single class is unique enough locally?
-                // No, just return it, verification happens in caller
                 return `.${CSS.escape(classes[0])}`;
             }
         }
@@ -270,23 +313,22 @@
     function getStrictPath(el) {
         let path = [];
         let curr = el;
-        // Limit depth to 5 parents to avoid infinitely long selectors
-        for (let i = 0; i < 5; i++) {
-            if (!curr || curr.nodeType !== Node.ELEMENT_NODE) break;
+        for (let i = 0; i < 4; i++) {
+            if (!curr || curr.nodeType !== Node.ELEMENT_NODE || curr.tagName === 'BODY') break;
 
             let sel = curr.tagName.toLowerCase();
             if (curr.id && !/\d/.test(curr.id)) {
                 sel += `#${CSS.escape(curr.id)}`;
                 path.unshift(sel);
-                break; // ID is usually anchor enough
-            } else {
-                // Use nth-of-type for robustness
-                let sib = curr, nth = 1;
-                while (sib = sib.previousElementSibling) {
-                    if (sib.tagName === curr.tagName) nth++;
-                }
-                sel += `:nth-of-type(${nth})`;
+                break;
             }
+
+            let sib = curr, nth = 1;
+            while (sib = sib.previousElementSibling) {
+                if (sib.tagName === curr.tagName) nth++;
+            }
+            if (nth > 1) sel += `:nth-of-type(${nth})`;
+
             path.unshift(sel);
             curr = curr.parentElement;
         }
@@ -296,6 +338,7 @@
 
     // ===== EDITOR MODE =====
     function handleMessages(request, sender, sendResponse) {
+        if (request.type === 'PING') sendResponse({ status: 'OK' });
         if (request.type === 'toggle_editor') toggleEditor(request.active);
         if (request.type === 'reload_rules') loadUserRules(() => applyAllHighlights());
     }
@@ -307,6 +350,9 @@
             document.addEventListener('mouseover', onEditorHover, true);
             document.addEventListener('click', onEditorClick, true);
             document.addEventListener('mouseout', onEditorOut, true);
+
+            // Re-run highlights to reveal hidden ones (Context Ignored)
+            applyAllHighlights();
 
             // Make highlights clickable
             document.querySelectorAll('.osp-static-highlight').forEach(el => {
@@ -333,6 +379,12 @@
 
     function onEditorHover(e) {
         if (e.target.closest('.osp-advanced-modal')) return;
+
+        // IGNORE BACKDROPS
+        if (e.target.className && typeof e.target.className === 'string' && e.target.className.includes('InputBackdrop')) {
+            e.target.style.pointerEvents = 'none';
+            return;
+        }
 
         // If hovering over an existing highlight, highlight IT (visual feedback)
         if (e.target.classList.contains('osp-static-highlight')) {
@@ -394,11 +446,17 @@
         const defaultLabel = isEditing ? existingRule.label : '';
         const defaultColor = isEditing ? existingRule.color : COLORS[0].value;
         const defaultShape = isEditing ? existingRule.style : 'rectangle';
+        const defaultPos = (isEditing && existingRule.labelPosition) ? existingRule.labelPosition : 'top';
+        const defaultContext = (isEditing && existingRule.contextText) ? existingRule.contextText : '';
+
+        // Check uniqueness for UI feedback
+        const matchCount = document.querySelectorAll(selector).length;
+        const isUnique = matchCount === 1;
 
         const modal = document.createElement('div');
         modal.className = 'osp-advanced-modal';
 
-        // UI Generation (Keep mostly same as before, add Debug button)
+        // UI Generation
         const colorGridHtml = COLORS.map(c =>
             `<div class="osp-color-option ${c.value === defaultColor ? 'selected' : ''}" 
                   style="background-color: ${c.value}" 
@@ -427,18 +485,45 @@
                     </div>
                 </div>
 
-                <div class="osp-form-group">
-                    <label class="osp-label">Shape</label>
-                    <div class="osp-shape-options">
-                        <button class="osp-shape-btn ${defaultShape === 'rectangle' ? 'selected' : ''}" data-value="rectangle">Box</button>
-                        <button class="osp-shape-btn ${defaultShape === 'circle' ? 'selected' : ''}" data-value="circle">Circle</button>
-                        <button class="osp-shape-btn ${defaultShape === 'underline' ? 'selected' : ''}" data-value="underline">Line</button>
+                <div style="display:flex; gap:16px;">
+                    <div class="osp-form-group" style="flex:1">
+                        <label class="osp-label">Shape</label>
+                        <div class="osp-options-row">
+                            <button class="osp-option-btn osp-shape-btn ${defaultShape === 'rectangle' ? 'selected' : ''}" data-value="rectangle">Box</button>
+                            <button class="osp-option-btn osp-shape-btn ${defaultShape === 'circle' ? 'selected' : ''}" data-value="circle">Circle</button>
+                            <button class="osp-option-btn osp-shape-btn ${defaultShape === 'underline' ? 'selected' : ''}" data-value="underline">Line</button>
+                        </div>
+                    </div>
+                    <div class="osp-form-group" style="flex:1">
+                        <label class="osp-label">Label Position</label>
+                        <div class="osp-options-row">
+                            <button class="osp-option-btn osp-pos-btn ${defaultPos === 'top' ? 'selected' : ''}" data-value="top">Top</button>
+                            <button class="osp-option-btn osp-pos-btn ${defaultPos === 'bottom' ? 'selected' : ''}" data-value="bottom">Bottom</button>
+                            <button class="osp-option-btn osp-pos-btn ${defaultPos === 'inside' ? 'selected' : ''}" data-value="inside">Inside</button>
+                        </div>
                     </div>
                 </div>
 
                 <div class="osp-form-group">
-                    <label class="osp-label">CSS Selector (Verified)</label>
-                    <input type="text" class="osp-input osp-code-input" id="osp-selector-input" value="${selector}">
+                    <label class="osp-label">Visibility Context (Optional)</label>
+                    <div style="display:flex; flex-direction:column; gap:8px;">
+                        <input type="text" class="osp-input" id="osp-context-input" placeholder="✅ Show ONLY if page says... e.g. 'Create Post'" value="${defaultContext}">
+                        <input type="text" class="osp-input" id="osp-excluded-context-input" placeholder="❌ HIDE if page says... e.g. 'Success'" value="${existingRule ? (existingRule.excludedContextText || '') : ''}">
+                    </div>
+                    <div style="font-size:10px; color:#6b7280; margin-top:2px;">Use these to prevent false positives on other screens.</div>
+                </div>
+
+                <div class="osp-form-group">
+                    <label class="osp-label" style="display:flex; justify-content:space-between;">
+                        <span>CSS Selector</span>
+                        <span id="osp-match-count" style="color:${isUnique ? '#10b981' : '#f59e0b'}">
+                            ${isUnique ? '✅ Unique Match' : '⚠️ Matches ' + matchCount}
+                        </span>
+                    </label>
+                    <div style="display:flex; gap:8px;">
+                        <input type="text" class="osp-input osp-code-input" id="osp-selector-input" value="${selector.replace(/"/g, '&quot;')}" style="flex:1">
+                        <button class="osp-btn-secondary" id="osp-regen-btn" title="Regenerate Selector">🔄</button>
+                    </div>
                 </div>
             </div>
             <div class="osp-modal-footer">
@@ -459,7 +544,25 @@
         // Inputs
         const labelInput = modal.querySelector('#osp-label-input');
         const selectorInput = modal.querySelector('#osp-selector-input');
+        const contextInput = modal.querySelector('#osp-context-input');
+        const excludedContextInput = modal.querySelector('#osp-excluded-context-input');
+        const matchCountSpan = modal.querySelector('#osp-match-count');
         labelInput.focus();
+
+        // REGENERATE CLICK
+        modal.querySelector('#osp-regen-btn').onclick = () => {
+            const newSelector = generateSelector(targetElement);
+            selectorInput.value = newSelector;
+
+            // Update match count info
+            const count = document.querySelectorAll(newSelector).length;
+            matchCountSpan.textContent = count === 1 ? '✅ Unique Match' : '⚠️ Matches ' + count;
+            matchCountSpan.style.color = count === 1 ? '#10b981' : '#f59e0b';
+
+            // Flash input to show update
+            selectorInput.style.backgroundColor = '#d1fae5';
+            setTimeout(() => selectorInput.style.backgroundColor = '', 300);
+        };
 
         // Color Click
         modal.querySelectorAll('.osp-color-option').forEach(opt => {
@@ -473,6 +576,14 @@
         modal.querySelectorAll('.osp-shape-btn').forEach(btn => {
             btn.addEventListener('click', () => {
                 modal.querySelectorAll('.osp-shape-btn').forEach(b => b.classList.remove('selected'));
+                btn.classList.add('selected');
+            });
+        });
+
+        // Position Click
+        modal.querySelectorAll('.osp-pos-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                modal.querySelectorAll('.osp-pos-btn').forEach(b => b.classList.remove('selected'));
                 btn.classList.add('selected');
             });
         });
@@ -501,6 +612,9 @@
 
             const color = modal.querySelector('.osp-color-option.selected').dataset.value;
             const shape = modal.querySelector('.osp-shape-btn.selected').dataset.value;
+            const position = modal.querySelector('.osp-pos-btn.selected').dataset.value;
+            const contextText = contextInput.value ? contextInput.value.trim() : '';
+            const excludedContextText = excludedContextInput.value ? excludedContextInput.value.trim() : '';
             const finalSelector = selectorInput.value.trim();
 
             const rule = {
@@ -509,7 +623,10 @@
                 selector: finalSelector,
                 label: label,
                 color: color,
-                style: shape
+                style: shape,
+                labelPosition: position,
+                contextText: contextText,
+                excludedContextText: excludedContextText
             };
 
             saveUserRule(rule);

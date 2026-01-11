@@ -18,17 +18,36 @@ document.addEventListener('DOMContentLoaded', () => {
         addLog(isEditorActive ? 'Editor enabled. Click elements to tag.' : 'Editor disabled.');
     });
 
-    btnClear.addEventListener('click', () => {
-        if (confirm('Are you sure you want to delete ALL saved highlighting rules?')) {
-            chrome.runtime.sendMessage({ action: 'CLEAR_RULES' });
-            chrome.storage.local.remove('osp_rules', () => {
-                addLog('Rules cleared from storage.', 'warning');
-                updateUI();
-                // Notify content to reload
-                sendMessageToContent({ type: 'reload_rules' });
+    document.getElementById('btn-clear-rules').addEventListener('click', () => {
+        if (confirm('Are you sure you want to delete ALL saved rules? This cannot be undone.')) {
+            chrome.storage.local.set({ osp_rules: [] }, () => {
+                updateRuleCount();
+                addLog('Rules cleared.', 'success');
+                sendMessageToContent({ type: 'reload_rules' }); // Notify content script
             });
         }
     });
+
+    document.getElementById('btn-export-rules').addEventListener('click', () => {
+        chrome.storage.local.get(['osp_rules'], (result) => {
+            const rules = result.osp_rules || [];
+            // Rules in content.js are an array, saving as array is better for json
+            const json = JSON.stringify(rules, null, 2);
+            navigator.clipboard.writeText(json).then(() => {
+                addLog('Rules copied to clipboard! Paste into rules.json.', 'success');
+            }).catch(err => {
+                addLog('Failed to copy: ' + err, 'error');
+            });
+        });
+    });
+
+    function updateRuleCount() {
+        chrome.storage.local.get(['osp_rules'], (result) => {
+            const rules = result.osp_rules || [];
+            const count = Array.isArray(rules) ? rules.length : Object.keys(rules).length;
+            document.getElementById('rule-count').textContent = count;
+        });
+    }
 
     function sendMessageToContent(message) {
         chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
@@ -40,14 +59,20 @@ document.addEventListener('DOMContentLoaded', () => {
                     return;
                 }
 
-                chrome.tabs.sendMessage(tabId, message).catch(err => {
-                    // Suppress "Receiving end does not exist" which happens if content script isn't ready
-                    if (err.message.includes('Receiving end does not exist')) {
-                        addLog('Page not ready or unsupported. Try reloading the page.', 'error');
-                    } else {
-                        addLog('Error: ' + err.message, 'error');
-                    }
-                });
+                // PING CHECK
+                chrome.tabs.sendMessage(tabId, { type: 'PING' })
+                    .then(() => {
+                        // Connection OK, send actual message
+                        return chrome.tabs.sendMessage(tabId, message);
+                    })
+                    .catch(err => {
+                        // If Ping fails, content script is likely not ready
+                        if (err.message.includes('Receiving end does not exist')) {
+                            addLog('Extension not ready. Please reload the page.', 'error');
+                        } else {
+                            addLog('Error: ' + err.message, 'error');
+                        }
+                    });
             }
         });
     }

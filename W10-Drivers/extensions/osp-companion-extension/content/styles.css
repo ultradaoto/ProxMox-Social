@@ -42,6 +42,7 @@
 .osp-highlight-label {
     position: absolute;
     top: -28px;
+    /* Default top */
     left: 0;
 
     background-color: #10b981;
@@ -84,10 +85,11 @@
    ============================================ */
 
 .osp-editor-hover {
-    outline: 2px dashed #3b82f6 !important;
-    outline-offset: 2px !important;
+    /* Use box-shadow via inset to ensure visibility */
+    box-shadow: inset 0 0 0 2px #3b82f6, 0 0 0 2px #3b82f6 !important;
     cursor: crosshair !important;
     background-color: rgba(59, 130, 246, 0.1) !important;
+    z-index: 2147483646 !important;
 }
 
 /* The Advanced Modal */
@@ -219,8 +221,8 @@
     box-shadow: 0 0 0 2px #3b82f6;
 }
 
-/* Shape Options */
-.osp-shape-options {
+/* Option Buttons (Shape & Position) */
+.osp-options-row {
     display: flex;
     gap: 2px;
     background: #1f2937;
@@ -228,7 +230,7 @@
     border-radius: 6px;
 }
 
-.osp-shape-btn {
+.osp-option-btn {
     flex: 1;
     background: transparent;
     border: none;
@@ -239,12 +241,28 @@
     border-radius: 4px;
 }
 
-.osp-shape-btn.selected {
+.osp-option-btn:hover {
+    color: white;
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.osp-option-btn.selected {
     background: #374151;
     color: white;
     font-weight: 600;
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
 }
+
+/* Deprecated compatibility (keep for safety if JS hasn't reloaded fully) */
+.osp-shape-options {
+    display: flex;
+    gap: 2px;
+}
+
+.osp-shape-btn {
+    flex: 1;
+}
+
 
 /* Footer Actions */
 .osp-modal-footer {

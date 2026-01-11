@@ -1,0 +1,77 @@
+[
+    {
+        "color": "#ef4444",
+        "domain": "www.skool.com",
+        "id": "mk94dkl5",
+        "label": "Click and Paste Title Here",
+        "selector": "[data-testid='title-input']",
+        "style": "rectangle"
+    },
+    {
+        "color": "#10b981",
+        "contextText": "",
+        "domain": "www.skool.com",
+        "excludedContextText": "comments",
+        "id": "mk950euu",
+        "label": "Click Here to Start a New Post",
+        "labelPosition": "top",
+        "selector": ".styled__CardContent-sc-116bwfw-0 > .styled__BoxWrapper-sc-esqoz3-0 > .styled__TypographyWrapper-sc-70zmwu-0",
+        "style": "rectangle"
+    },
+    {
+        "color": "#10b981",
+        "domain": "www.skool.com",
+        "id": "mk952v2s",
+        "label": "Click here and Paste Title",
+        "selector": ".cJtswi > [data-testid='title-input']",
+        "style": "rectangle"
+    },
+    {
+        "color": "#10b981",
+        "domain": "www.skool.com",
+        "id": "mk954ji9",
+        "label": "Click here and Paste Title",
+        "selector": ".cJtswi > [data-testid='title-input']",
+        "style": "rectangle"
+    },
+    {
+        "color": "#10b981",
+        "contextText": "",
+        "domain": "www.skool.com",
+        "id": "mk95o2qk",
+        "label": "Click here and Paste Title",
+        "labelPosition": "inside",
+        "selector": "div:nth-of-type(2) > div > div > input",
+        "style": "rectangle"
+    },
+    {
+        "color": "#ef4444",
+        "contextText": "Send email to all members",
+        "domain": "www.skool.com",
+        "id": "mk95po7t",
+        "label": "Click here & Paste Body Content & Click & Paste Image/Media",
+        "labelPosition": "inside",
+        "selector": ".styled__PostBody-sc-41pcfm-11 > div",
+        "style": "rectangle"
+    },
+    {
+        "color": "#f97316",
+        "contextText": "Send email to all members",
+        "domain": "www.skool.com",
+        "id": "mk99rs4s",
+        "label": "E-Mail",
+        "labelPosition": "bottom",
+        "selector": ".styled__SwitchTrack-sc-1k62961-2",
+        "style": "circle"
+    },
+    {
+        "color": "#f97316",
+        "contextText": "",
+        "domain": "www.skool.com",
+        "id": "mk9a5w9i",
+        "label": "Click to POST",
+        "labelPosition": "inside",
+        "selector": ".styled__SubmitButtonWrapper-sc-41pcfm-2",
+        "style": "rectangle"
+    }
+]
