@@ -1,11 +1,16 @@
 """
-One-Click Social Poster (OSP) GUI
+On-Screen Prompter (OSP) GUI - Simplified Control Panel
 Windows 10 Desktop Application
 
-Updates:
-- Integrates WebSocket Server to communicate with Chrome Extension.
-- New "Flow-based" UI with step-by-step instructions.
-- Auto-docks to right 15% of screen.
+Design Principles (per WS10-OSP-PYTHON-FIX.md):
+1. STATIC LABELS - Button text NEVER changes
+2. INDEPENDENT ACTIONS - Each button does ONE thing
+3. NO STATE TRACKING - OSP doesn't track workflow steps
+4. DUMB PANEL - Zero decision-making logic
+5. VISION-FRIENDLY - High contrast, predictable layout
+
+The Ubuntu controller uses vision to find and click these buttons.
+The OSP just provides services (clipboard copy, URL opening, status reporting).
 """
 import sys
 import os
@@ -658,148 +663,202 @@ class PrompterWindow(QMainWindow):
                 pass
 
     def _setup_ui(self):
+        """
+        SIMPLIFIED CONTROL PANEL UI
+        
+        Per WS10-OSP-PYTHON-FIX.md specifications:
+        - 7 static buttons with labels that NEVER change
+        - High contrast colors for vision detection
+        - Predictable, fixed layout
+        """
         central = QWidget()
         self.setCentralWidget(central)
         layout = QVBoxLayout(central)
         layout.setContentsMargins(10, 10, 10, 10)
-        layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(8)
         
-        # --- LOG WINDOW ---
+        # --- HEADER SECTION ---
+        header_frame = QFrame()
+        header_frame.setStyleSheet("background: #2d2d2d; border-radius: 5px; padding: 5px;")
+        header_layout = QVBoxLayout(header_frame)
+        header_layout.setSpacing(4)
+        
+        # Platform Header
+        self.platform_label = QLabel("Platform: ---")
+        self.platform_label.setStyleSheet("color: white; font-weight: bold; font-size: 14px;")
+        header_layout.addWidget(self.platform_label)
+        
+        # Post ID / Job Info
+        self.post_id_label = QLabel("Post ID: ---")
+        self.post_id_label.setStyleSheet("color: #95a5a6; font-size: 10px;")
+        header_layout.addWidget(self.post_id_label)
+        
+        # Queue Count
+        self.count_label = QLabel("Queue: 0")
+        self.count_label.setStyleSheet("color: #aaa; font-size: 11px;")
+        header_layout.addWidget(self.count_label)
+        
+        layout.addWidget(header_frame)
+        
+        # --- IMAGE PREVIEW ---
+        self.image_label = QLabel()
+        self.image_label.setMinimumHeight(80)
+        self.image_label.setMaximumHeight(100)
+        self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.image_label.setStyleSheet("background: #000; border-radius: 3px;")
+        layout.addWidget(self.image_label)
+        
+        # --- STATIC ACTION BUTTONS (NEVER CHANGE LABELS) ---
+        # Per spec: "OPEN URL", "COPY TITLE", "COPY BODY", "COPY IMAGE"
+        
+        # Button 1: OPEN URL (Blue)
+        self.btn_open_url = self._make_static_btn("OPEN URL", self.open_link_action, "#3498db")
+        layout.addWidget(self.btn_open_url)
+        
+        # Button 2: COPY TITLE (Blue)
+        self.btn_copy_title = self._make_static_btn("COPY TITLE", self.copy_title_action, "#3498db")
+        layout.addWidget(self.btn_copy_title)
+        
+        # Button 3: COPY BODY (Blue)
+        self.btn_copy_body = self._make_static_btn("COPY BODY", self.copy_body_action, "#3498db")
+        layout.addWidget(self.btn_copy_body)
+        
+        # Button 4: COPY IMAGE (Blue)
+        self.btn_copy_image = self._make_static_btn("COPY IMAGE", self.copy_image_data_action, "#3498db")
+        layout.addWidget(self.btn_copy_image)
+        
+        # --- SEPARATOR ---
+        sep1 = QFrame()
+        sep1.setFrameShape(QFrame.Shape.HLine)
+        sep1.setStyleSheet("background-color: #444;")
+        layout.addWidget(sep1)
+        
+        # --- EMAIL CHECKBOX ---
+        self.email_alert_label = QLabel("☐ Send Email Notification")
+        self.email_alert_label.setStyleSheet("color: #ccc; font-size: 11px; padding: 5px;")
+        self.email_alert_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.email_alert_label)
+        
+        # --- SEPARATOR ---
+        sep2 = QFrame()
+        sep2.setFrameShape(QFrame.Shape.HLine)
+        sep2.setStyleSheet("background-color: #444;")
+        layout.addWidget(sep2)
+        
+        # Button 5: POST (Orange) - Signals ready to post
+        self.btn_post = self._make_static_btn("POST", self.on_post_ready, "#e67e22")
+        layout.addWidget(self.btn_post)
+        
+        # --- SEPARATOR ---
+        sep3 = QFrame()
+        sep3.setFrameShape(QFrame.Shape.HLine)
+        sep3.setStyleSheet("background-color: #444;")
+        layout.addWidget(sep3)
+        
+        # --- SUCCESS / FAILED BUTTONS ---
+        result_layout = QHBoxLayout()
+        result_layout.setSpacing(10)
+        
+        # Button 6: SUCCESS (Green)
+        self.btn_success = self._make_static_btn("✓ SUCCESS", self.mark_complete, "#27ae60")
+        result_layout.addWidget(self.btn_success)
+        
+        # Button 7: FAILED (Red)
+        self.btn_failed = self._make_static_btn("✗ FAILED", self.mark_failed, "#e74c3c")
+        result_layout.addWidget(self.btn_failed)
+        
+        layout.addLayout(result_layout)
+        
+        # --- STATUS BAR ---
+        self.status_label = QLabel("Status: Waiting for job...")
+        self.status_label.setStyleSheet("color: #95a5a6; font-size: 10px; padding: 5px;")
+        self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.status_label)
+        
+        # --- NAVIGATION (smaller, bottom) ---
+        nav_layout = QHBoxLayout()
+        self.btn_prev = self._make_nav_btn("←", self.prev_job)
+        self.btn_next = self._make_nav_btn("→", self.next_job)
+        nav_layout.addWidget(self.btn_prev)
+        nav_layout.addStretch()
+        
+        # Workflow Editor Button (small)
+        workflow_btn = QPushButton("⚙")
+        workflow_btn.setFixedSize(30, 30)
+        workflow_btn.setStyleSheet("background-color: #333; color: #888; border: none; border-radius: 4px;")
+        workflow_btn.clicked.connect(self.open_workflow_editor)
+        nav_layout.addWidget(workflow_btn)
+        
+        nav_layout.addStretch()
+        nav_layout.addWidget(self.btn_next)
+        layout.addLayout(nav_layout)
+        
+        # --- LOG WINDOW (collapsed, bottom) ---
         self.log_list = QListWidget()
-        self.log_list.setFixedHeight(60)
+        self.log_list.setFixedHeight(40)
         self.log_list.setStyleSheet("""
             QListWidget {
                 background-color: #000; color: #22c55e; border: 1px solid #333;
-                font-family: Consolas, monospace; font-size: 10px;
+                font-family: Consolas, monospace; font-size: 9px;
             }
-            QListWidget::item { padding: 2px; }
+            QListWidget::item { padding: 1px; }
         """)
         self.log_list.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.log_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.log_list.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
-        self.log_list.setWordWrap(True)
         layout.addWidget(self.log_list)
-
-        # --- TOP STATUS BAR ---
-        status_layout = QHBoxLayout()
+        
+        # --- CONNECTION STATUS (tiny indicator) ---
+        conn_layout = QHBoxLayout()
         self.conn_label = QLabel("● Disconnected")
-        self.conn_label.setStyleSheet("color: #ef4444; font-size: 11px;") # Red
-        status_layout.addWidget(self.conn_label)
+        self.conn_label.setStyleSheet("color: #ef4444; font-size: 9px;")
+        conn_layout.addWidget(self.conn_label)
+        conn_layout.addStretch()
         
-        # Mode Label (Recording/Playback)
         self.mode_label = QLabel("")
-        self.mode_label.setStyleSheet("font-weight: bold; font-size: 11px;")
-        status_layout.addWidget(self.mode_label)
-        
-        status_layout.addStretch()
-        
-        # Workflow Button
-        workflow_btn = QPushButton("WORKFLOWS")
-        workflow_btn.setStyleSheet("background-color: #3b82f6; color: white; border: none; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;")
-        workflow_btn.clicked.connect(self.open_workflow_editor)
-        status_layout.addWidget(workflow_btn)
-        
-        self.count_label = QLabel("Queue: 0")
-        self.count_label.setStyleSheet("color: #aaa; font-size: 11px;")
-        self.count_label.setAlignment(Qt.AlignmentFlag.AlignRight)
-        status_layout.addWidget(self.count_label)
-        layout.addLayout(status_layout)
-        
-        # --- MAIN INSTRUCTION BUTTON ---
-        self.btn_instruction = QPushButton("WAITING FOR JOB")
-        self.btn_instruction.setMinimumHeight(60)
-        self.btn_instruction.clicked.connect(self.on_instruction_click)
-        self.btn_instruction.setStyleSheet("""
-            QPushButton {
-                background-color: #333; color: #888; border: none; 
-                border-radius: 6px; font-weight: bold; font-size: 16px;
-            }
-        """)
-        layout.addWidget(self.btn_instruction)
-        
-        # --- STEP INFO ---
-        self.step_label = QLabel("Step: None")
-        self.step_label.setStyleSheet("color: #888; font-size: 12px;")
-        layout.addWidget(self.step_label)
-        
-        # --- JOB CONTENT ---
-        self.content_frame = QFrame()
-        self.content_frame.setStyleSheet("background: #2d2d2d; border-radius: 5px;")
-        content_layout = QVBoxLayout(self.content_frame)
-        
-        # Platform Header
-        self.platform_label = QLabel("Platform: ---")
-        self.platform_label.setStyleSheet("color: white; font-weight: bold;")
-        content_layout.addWidget(self.platform_label)
-
-        # Email Alert Label (Hidden by default)
-        self.email_alert_label = QLabel("📧 TOGGLE EMAIL TO MEMBERS")
-        self.email_alert_label.setStyleSheet("background-color: #ef4444; color: white; font-weight: bold; padding: 4px; border-radius: 4px;")
-        self.email_alert_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.email_alert_label.hide()
-        content_layout.addWidget(self.email_alert_label)
-
-        # Image Preview
-        self.image_label = QLabel()
-        self.image_label.setMinimumHeight(100)
-        self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.image_label.setStyleSheet("background: #000; border-radius: 3px;")
-        content_layout.addWidget(self.image_label)
-        
-        # Content Text
-        self.content_text = QLabel()
-        self.content_text.setWordWrap(True)
-        self.content_text.setStyleSheet("color: #ddd;")
-        content_layout.addWidget(self.content_text)
-        
-        layout.addWidget(self.content_frame)
-        
-        # --- MANUAL ACTIONS ---
-        actions_label = QLabel("Manual Actions")
-        actions_label.setStyleSheet("color: #666; font-size: 10px; margin-top: 10px;")
-        layout.addWidget(actions_label)
-        
-        # Open URL
-        self.btn_open_url = self._make_btn("1. OPEN URL", self.open_link_action, "#444")
-        layout.addWidget(self.btn_open_url)
-        
-        # Copy Buttons
-        copy_layout = QHBoxLayout()
-        self.btn_copy_title = self._make_btn("2. COPY TITLE", self.copy_title_action, "#444")
-        self.btn_copy_body = self._make_btn("3. COPY BODY", self.copy_body_action, "#444")
-        copy_layout.addWidget(self.btn_copy_title)
-        copy_layout.addWidget(self.btn_copy_body)
-        layout.addLayout(copy_layout)
-
-        # Image Actions Row (Restored)
-        img_btns_layout = QHBoxLayout()
-        self.btn_copy_img_path = self._make_btn("COPY IMG PATH", self.copy_image_path_action, "#3b82f6") # Blue
-        self.btn_copy_img_data = self._make_btn("COPY IMG DATA", self.copy_image_data_action, "#8b5cf6") # Purple
-        img_btns_layout.addWidget(self.btn_copy_img_path)
-        img_btns_layout.addWidget(self.btn_copy_img_data)
-        layout.addLayout(img_btns_layout)
-
-        # Navigation
-        nav_layout = QHBoxLayout()
-        self.btn_fail = self._make_btn("✗ Fail", self.mark_failed, "#ef4444")
-        self.btn_done = self._make_btn("✓ Done", self.mark_complete, "#22c55e")
-        nav_layout.addWidget(self.btn_fail)
-        nav_layout.addWidget(self.btn_done)
-        layout.addLayout(nav_layout)
-        
-        # Nav Arrows
-        arrows_layout = QHBoxLayout()
-        self.btn_prev = self._make_btn("←", self.prev_job, "#333")
-        self.btn_next = self._make_btn("→", self.next_job, "#333")
-        arrows_layout.addWidget(self.btn_prev)
-        arrows_layout.addWidget(self.btn_next)
-        layout.addLayout(arrows_layout)
+        self.mode_label.setStyleSheet("font-size: 9px;")
+        conn_layout.addWidget(self.mode_label)
+        layout.addLayout(conn_layout)
 
         # Style Global
         self.setStyleSheet("QMainWindow { background: #1a1a1a; } QLabel { font-family: Segoe UI; }")
     
+    def _make_static_btn(self, text, func, color):
+        """
+        Create a STATIC button for the simplified control panel.
+        
+        Per spec: Buttons have fixed labels that NEVER change.
+        High contrast colors for vision detection.
+        50px height for easy clicking.
+        """
+        btn = QPushButton(text)
+        btn.clicked.connect(func)
+        btn.setFixedHeight(50)
+        btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {color}; color: white; border: none; 
+                border-radius: 6px; font-weight: bold; font-size: 14px;
+            }}
+            QPushButton:hover {{ background-color: white; color: {color}; }}
+        """)
+        return btn
+    
+    def _make_nav_btn(self, text, func):
+        """Create a small navigation button."""
+        btn = QPushButton(text)
+        btn.clicked.connect(func)
+        btn.setFixedSize(40, 30)
+        btn.setStyleSheet("""
+            QPushButton {
+                background-color: #333; color: #888; border: none; 
+                border-radius: 4px; font-weight: bold; font-size: 14px;
+            }
+            QPushButton:hover { background-color: #444; color: white; }
+        """)
+        return btn
+    
     def _make_btn(self, text, func, color):
+        """Legacy button creator - kept for compatibility."""
         btn = QPushButton(text)
         btn.clicked.connect(func)
         btn.setFixedHeight(30)
@@ -813,13 +872,28 @@ class PrompterWindow(QMainWindow):
         return btn
 
     def _setup_shortcuts(self):
+        """
+        Keyboard shortcuts for the simplified control panel.
+        
+        Ctrl+1: Open URL
+        Ctrl+2: Copy Title
+        Ctrl+3: Copy Body
+        Ctrl+4: Copy Image
+        Ctrl+5: POST (ready to post)
+        Ctrl+Enter: Success
+        Ctrl+Backspace: Failed
+        Ctrl+Right: Next job
+        Ctrl+Left: Previous job
+        """
         QShortcut(QKeySequence("Ctrl+1"), self).activated.connect(self.open_link_action)
         QShortcut(QKeySequence("Ctrl+2"), self).activated.connect(self.copy_title_action)
         QShortcut(QKeySequence("Ctrl+3"), self).activated.connect(self.copy_body_action)
-        QShortcut(QKeySequence("Ctrl+4"), self).activated.connect(self.copy_image_path_action)
-        QShortcut(QKeySequence("Ctrl+5"), self).activated.connect(self.copy_image_data_action)
+        QShortcut(QKeySequence("Ctrl+4"), self).activated.connect(self.copy_image_data_action)
+        QShortcut(QKeySequence("Ctrl+5"), self).activated.connect(self.on_post_ready)
         QShortcut(QKeySequence("Ctrl+Return"), self).activated.connect(self.mark_complete)
+        QShortcut(QKeySequence("Ctrl+Backspace"), self).activated.connect(self.mark_failed)
         QShortcut(QKeySequence("Ctrl+Right"), self).activated.connect(self.next_job)
+        QShortcut(QKeySequence("Ctrl+Left"), self).activated.connect(self.prev_job)
 
     # --- WEBSOCKET HANDLERS ---
     def on_ws_connected(self):
@@ -1280,115 +1354,102 @@ class PrompterWindow(QMainWindow):
         log_ws("UI: Instruction/Main Button Clicked")
         # Placeholder
         pass
+    
+    def on_post_ready(self):
+        """
+        POST button clicked - signals that content is ready to be posted.
+        
+        Per simplified spec: This just updates status, doesn't do any workflow logic.
+        The Ubuntu controller will click the platform's actual Post button.
+        """
+        log_ws("UI: POST button clicked - ready to post")
+        self.update_status("Ready to post - click platform's Post button")
+        self.record_interaction({"action": "post_ready"}, source="osp", label="Signal: Ready to Post")
+    
+    def update_status(self, message: str):
+        """Update the status bar message."""
+        self.status_label.setText(f"Status: {message}")
 
     def open_link_action(self):
-        log_ws("UI: Open URL Button Clicked")
+        """
+        OPEN URL button clicked.
         
-        if self.is_recording:
-            # ALREADY RECORDING - CONTINUE SESSION
-            log_ws("Already in Recording Mode - Recording Open URL as a step")
-            # If this is the VERY first step, we might want to restart, but usually user just clicked Record -> then Open URL
-            # So we record it.
-            self.record_interaction({"action": "open_url"}, source="osp", label="Launch Browser & Navigation")
-            # Signal Chrome just in case
-            self.ws_server.send("start_recording", {"reapply": True})
-        else:
-            # NOT RECORDING - TRY PLAYBACK OR START NEW RECORDING
-            macro_loaded = self.load_playback_macro()
-            
-            if macro_loaded:
-                # PLAYBACK MODE
-                log_ws("Macro found - Starting Playback")
-                self.is_recording = False
-                self.recording_started = False
-            else:
-                # NO MACRO - START NEW RECORDING SESSION
-                log_ws("No macro found - Starting New Recording Session")
-                self.is_recording = True
-                self.recording_started = True 
-                
-                # Record Step 1 (Open URL)
-                self.record_interaction({"action": "open_url"}, source="osp", label="Launch Browser & Navigation")
-                
-                # Synchronize Chrome with Recording Mode
-                self.ws_server.send("start_recording", {})
-                
-                # Update Mode Indicator for Recording
-                self.mode_label.setText("● Recording")
-                self.mode_label.setStyleSheet("color: #ef4444; font-weight: bold; font-size: 11px; margin-left: 10px;")
-
-        # Track the step internally
-        self.trigger_playback_step("open_url")
+        Per simplified spec: Just open the URL in browser, nothing else.
+        """
+        log_ws("UI: Open URL Button Clicked")
         
         job = self.queue.current_job
         if job and job.link:
+            # Try WebSocket first (Chrome extension), fall back to system browser
             self.ws_server.send("open_url", {"url": job.link})
-            self.set_instruction_step("WAITING FOR CHROME INFO...", "#eab308", lambda: None)
-            self.btn_instruction.setEnabled(False)
-            QTimer.singleShot(4000, lambda: self.btn_instruction.setEnabled(True))
+            self.open_link()  # Also open via system as backup
+            self._flash_btn(self.btn_open_url)
+            self.update_status("URL opened in browser")
+            self.record_interaction({"action": "open_url"}, source="osp", label="Open URL")
         else:
-            self.open_link()
+            self.update_status("No URL available")
 
     def copy_title_action(self):
+        """
+        COPY TITLE button clicked.
+        
+        Per simplified spec: Just copy title to clipboard, nothing else.
+        """
         log_ws("UI: Copy Title Clicked")
-        self.record_interaction({"action": "copy_title"}, source="osp", label="Copy Title from OSP")
-        self.trigger_playback_step("copy_title")
         job = self.queue.current_job
         if job:
             pyperclip.copy(job.title)
             self._flash_btn(self.btn_copy_title)
-            self.set_instruction_step("PASTE IN CHROME", "#3b82f6", lambda: None)
-            
-            # TRIGGER WIZARD: Support visual guidance in Chrome
-            self.send_guidance("title", "Title copied! Now CLICK & PASTE it into the highlighted box")
-
-            # DIRECTIVE: Record that we are asking Chrome to highlight the Title
-            self.record_interaction({
-                "action": "directive", 
-                "directive": "highlight_element",
-                "selector": "[placeholder='Title'], .title-input",
-                "label": "Highlight Title Input"
-            }, source="osp", label="Directive: Point to Title Input") # Blue
+            self.update_status("Title copied to clipboard")
+            self.record_interaction({"action": "copy_title"}, source="osp", label="Copy Title")
+        else:
+            self.update_status("No job loaded")
 
     def copy_body_action(self):
+        """
+        COPY BODY button clicked.
+        
+        Per simplified spec: Just copy body to clipboard, nothing else.
+        """
         log_ws("UI: Copy Body Clicked")
-        self.record_interaction({"action": "copy_body"}, source="osp", label="Copy Caption/Body from OSP")
-        self.trigger_playback_step("copy_body")
         job = self.queue.current_job
         if job:
             pyperclip.copy(job.caption)
             self._flash_btn(self.btn_copy_body)
-            self.set_instruction_step("PASTE IN CHROME", "#3b82f6", lambda: None)
-            
-            # TRIGGER WIZARD: Support visual guidance in Chrome
-            self.send_guidance("body", "Body copied! Now CLICK & PASTE it into the highlighted box")
-
-            # DIRECTIVE: Record highlight for Body
-            self.record_interaction({
-                "action": "directive",
-                "directive": "highlight_element",
-                "selector": "[data-placeholder='Write something...'], .tiptap.skool-editor, textarea",
-                "label": "Highlight Body Input"
-            }, source="osp", label="Directive: Point to Body Input")
+            self.update_status("Body copied to clipboard")
+            self.record_interaction({"action": "copy_body"}, source="osp", label="Copy Body")
+        else:
+            self.update_status("No job loaded")
 
     def copy_image_path_action(self):
+        """Copy image file path to clipboard."""
         job = self.queue.current_job
         if job and job.image_path:
-            # Copy absolute path
             pyperclip.copy(str(Path(job.image_path).absolute()))
-            self._flash_btn(self.btn_copy_img_path)
+            self.update_status("Image path copied")
+        else:
+            self.update_status("No image available")
 
     def copy_image_data_action(self):
+        """
+        COPY IMAGE button clicked.
+        
+        Per simplified spec: Copy image data to clipboard for pasting.
+        """
+        log_ws("UI: Copy Image Clicked")
         job = self.queue.current_job
         if job and job.image_path:
             try:
                 img = QImage(job.image_path)
                 QApplication.clipboard().setImage(img)
-                self._flash_btn(self.btn_copy_img_data)
-                self.record_interaction({"action": "copy_img_data"}, source="osp", label="Copy Image Data")
-                self.trigger_playback_step("copy_img_data")
+                self._flash_btn(self.btn_copy_image)
+                self.update_status("Image copied to clipboard")
+                self.record_interaction({"action": "copy_image"}, source="osp", label="Copy Image")
             except Exception as e:
+                self.update_status(f"Error copying image: {e}")
                 print(f"Failed to copy image: {e}")
+        else:
+            self.update_status("No image available")
 
     # --- STANDARD QUEUE ACTIONS ---
     def refresh_queue(self):
@@ -1400,6 +1461,12 @@ class PrompterWindow(QMainWindow):
             self.update_display()
 
     def update_display(self):
+        """
+        Update the UI to reflect current job state.
+        
+        SIMPLIFIED CONTROL PANEL: No dynamic button changes.
+        Just update the header info, image preview, and status.
+        """
         # Reset guidance tracking so highlights can be re-triggered for new jobs
         self.last_guidance_field = None
         self.last_guidance_text = None
@@ -1407,52 +1474,75 @@ class PrompterWindow(QMainWindow):
         job = self.queue.current_job
         if not job:
             self.platform_label.setText("Platform: ---")
-            self.content_text.setText("No Job Selected")
+            self.post_id_label.setText("Post ID: ---")
             self.image_label.clear()
-            self.btn_instruction.setText("NO JOBS")
-            self.btn_instruction.setStyleSheet("background-color: #333; color: #666;")
+            self.image_label.setText("No Image")
+            self.email_alert_label.setText("☐ Send Email Notification")
+            self.update_status("Waiting for job...")
             return
 
-        if not self.is_recording:
-            self.reset_flow()
-        
+        # Update header info
         color = PLATFORM_COLORS.get(job.platform, "#888888")
         self.platform_label.setText(f"Platform: {job.platform.value.upper()}")
         self.platform_label.setStyleSheet(f"color: {color}; font-weight: bold; font-size: 14px;")
         
-        if job.email_members:
-            self.email_alert_label.show()
-        else:
-            self.email_alert_label.hide()
-
-        self.content_text.setText(f"{job.title}\n---\n{job.caption[:50]}...")
+        # Post ID
+        job_id_display = job.job_id[:20] + "..." if len(job.job_id) > 20 else job.job_id
+        self.post_id_label.setText(f"Post ID: {job_id_display}")
         
+        # Email checkbox state
+        if job.email_members:
+            self.email_alert_label.setText("☑ Send Email Notification")
+            self.email_alert_label.setStyleSheet("color: #27ae60; font-size: 11px; padding: 5px; font-weight: bold;")
+        else:
+            self.email_alert_label.setText("☐ Send Email Notification")
+            self.email_alert_label.setStyleSheet("color: #ccc; font-size: 11px; padding: 5px;")
+        
+        # Image preview
         img_path = job.image_path
         if img_path and os.path.exists(img_path):
             try:
                 pixmap = QPixmap(img_path).scaled(
-                    200, 150, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation
+                    200, 80, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation
                 )
                 self.image_label.setPixmap(pixmap)
             except:
                 self.image_label.setText("Img Error")
         else:
             self.image_label.setText("No Image")
+        
+        # Update status
+        self.update_status("Job loaded - ready for action")
 
     def mark_complete(self):
-        log_ws("UI: Mark Complete Clicked")
-        self.record_interaction({"action": "mark_done"}, source="osp", label="Workflow Completed Successfully")
-        self.trigger_playback_step("mark_done")
+        """
+        SUCCESS button clicked.
+        
+        Per simplified spec: Report success to API and move to next job.
+        """
+        log_ws("UI: SUCCESS button clicked")
+        self.record_interaction({"action": "success"}, source="osp", label="Marked Success")
         if self.queue.complete_current():
+            self.update_status("Success! Moving to next job...")
             self.refresh_queue()
             self.update_display()
+        else:
+            self.update_status("Failed to mark complete")
 
     def mark_failed(self):
-        log_ws("UI: Mark Failed Clicked")
-        self.record_interaction({"action": "mark_failed"}, source="osp", label="Workflow Marked as Failed")
+        """
+        FAILED button clicked.
+        
+        Per simplified spec: Report failure to API and move to next job.
+        """
+        log_ws("UI: FAILED button clicked")
+        self.record_interaction({"action": "failed"}, source="osp", label="Marked Failed")
         if self.queue.fail_current("User marked failed"):
+            self.update_status("Marked failed. Moving to next job...")
             self.refresh_queue()
             self.update_display()
+        else:
+            self.update_status("Failed to mark as failed")
 
     def next_job(self):
         self.queue.next()

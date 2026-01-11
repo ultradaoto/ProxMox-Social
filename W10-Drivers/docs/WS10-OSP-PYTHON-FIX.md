@@ -1,16 +1,23 @@
 # WINDOWS10-OSP-PYTHON-FIX.md
 # On-Screen Prompter (OSP) - Simplified Control Panel
 
-## What the OSP Becomes
+**STATUS: IMPLEMENTED** - Fixes applied to `osp_gui.py` on 2026-01-10
 
-The OSP is no longer trying to be "smart." It's now a **dumb control panel** - a simple Python GUI that:
+## What the OSP Has Become
 
-1. Fetches post data from the Social Dashboard API
-2. Displays static buttons in predictable locations
+The OSP has been refactored to be a **dumb control panel** - a PyQt6 GUI that:
+
+1. Reads post data from the local job queue (C:/PostQueue)
+2. Displays **7 static buttons** in predictable locations (labels NEVER change)
 3. Handles clipboard operations when buttons are clicked
-4. Reports success/failure back to the API
+4. Reports success/failure via job queue management
 
 **The Ubuntu controller uses vision to find and click these buttons.** The OSP doesn't make decisions - it just provides services (clipboard copy, URL opening, status reporting).
+
+### Implementation File
+- **Location:** `W10-Drivers/SocialWorker/osp_gui.py`
+- **Framework:** PyQt6 (kept existing infrastructure)
+- **Run:** `python osp_gui.py`
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -179,254 +186,113 @@ class SimpleOSP:
 
 ---
 
-## Complete Python Implementation
+## Implementation Details
 
-### File: `osp_simple.py`
+### File: `osp_gui.py` (UPDATED)
+
+The existing `osp_gui.py` has been refactored to follow these principles. Key changes:
 
 ```python
 """
-Simplified On-Screen Prompter (OSP) for Social Media Posting.
+On-Screen Prompter (OSP) GUI - Simplified Control Panel
+Windows 10 Desktop Application
 
-This is a DUMB control panel - it doesn't make decisions.
-It provides clipboard services and status reporting.
-The Ubuntu controller uses vision to click these buttons.
+Design Principles (per WS10-OSP-PYTHON-FIX.md):
+1. STATIC LABELS - Button text NEVER changes
+2. INDEPENDENT ACTIONS - Each button does ONE thing
+3. NO STATE TRACKING - OSP doesn't track workflow steps
+4. DUMB PANEL - Zero decision-making logic
+5. VISION-FRIENDLY - High contrast, predictable layout
 """
 
-import tkinter as tk
-from tkinter import ttk, messagebox
-import pyperclip
-import requests
-import webbrowser
-import threading
-import time
-from PIL import Image, ImageTk
-import io
-import base64
-from dataclasses import dataclass
-from typing import Optional
-import json
+# Button Creation - Labels are FIXED
+def _make_static_btn(self, text, func, color):
+    """
+    Create a STATIC button for the simplified control panel.
+    
+    Per spec: Buttons have fixed labels that NEVER change.
+    High contrast colors for vision detection.
+    50px height for easy clicking.
+    """
+    btn = QPushButton(text)
+    btn.clicked.connect(func)
+    btn.setFixedHeight(50)
+    btn.setStyleSheet(f"""
+        QPushButton {{
+            background-color: {color}; color: white; border: none; 
+            border-radius: 6px; font-weight: bold; font-size: 14px;
+        }}
+        QPushButton:hover {{ background-color: white; color: {color}; }}
+    """)
+    return btn
 
+# The 7 Static Buttons (created in _setup_ui)
+self.btn_open_url = self._make_static_btn("OPEN URL", self.open_link_action, "#3498db")
+self.btn_copy_title = self._make_static_btn("COPY TITLE", self.copy_title_action, "#3498db")
+self.btn_copy_body = self._make_static_btn("COPY BODY", self.copy_body_action, "#3498db")
+self.btn_copy_image = self._make_static_btn("COPY IMAGE", self.copy_image_data_action, "#3498db")
+self.btn_post = self._make_static_btn("POST", self.on_post_ready, "#e67e22")
+self.btn_success = self._make_static_btn("✓ SUCCESS", self.mark_complete, "#27ae60")
+self.btn_failed = self._make_static_btn("✗ FAILED", self.mark_failed, "#e74c3c")
 
-@dataclass
-class PostData:
-    """Data for a single post."""
-    id: str
-    platform: str
-    url: str
-    title: str
-    body: str
-    image_path: Optional[str]
-    image_base64: Optional[str]
-    send_email: bool
+# Colors (matching spec)
+COLOR_BUTTON_BLUE = "#3498db"    # OPEN URL, COPY TITLE, COPY BODY, COPY IMAGE
+COLOR_BUTTON_ORANGE = "#e67e22"  # POST
+COLOR_BUTTON_GREEN = "#27ae60"   # SUCCESS
+COLOR_BUTTON_RED = "#e74c3c"     # FAILED
+```
 
+### Key Implementation Changes
 
-class SimpleOSP:
-    """Simplified On-Screen Prompter - a dumb control panel."""
+1. **Removed dynamic `btn_instruction`** - No more button that changes text
+2. **Added 7 static buttons** - Each has a fixed label that NEVER changes
+3. **Simplified action methods** - Each button does ONE thing, then updates status
+4. **Added `update_status()` method** - For showing feedback in status bar
+5. **Removed state machine logic** - No workflow tracking, no playback triggers
+6. **Kept existing infrastructure** - WebSocket, queue system, recordings still work
     
-    # API Configuration
-    API_BASE_URL = "https://social.sterlingcooley.com/api"
-    POLL_INTERVAL = 10  # seconds
-    
-    # Window Configuration
-    WINDOW_WIDTH = 300
-    WINDOW_HEIGHT = 550
-    BUTTON_HEIGHT = 50
-    PADDING = 10
-    
-    # Colors
-    COLOR_BG = "#2d2d2d"
-    COLOR_BUTTON_BLUE = "#3498db"
-    COLOR_BUTTON_ORANGE = "#e67e22"
-    COLOR_BUTTON_GREEN = "#27ae60"
-    COLOR_BUTTON_RED = "#e74c3c"
-    COLOR_TEXT = "#ffffff"
-    COLOR_TEXT_MUTED = "#95a5a6"
-    
-    def __init__(self):
-        """Initialize the OSP window."""
-        self.current_post: Optional[PostData] = None
-        self.running = True
-        
-        # Create main window
-        self.root = tk.Tk()
-        self.root.title("Social Poster")
-        self.root.geometry(f"{self.WINDOW_WIDTH}x{self.WINDOW_HEIGHT}")
-        self.root.configure(bg=self.COLOR_BG)
-        self.root.resizable(False, False)
-        self.root.attributes("-topmost", True)
-        
-        # Position window on right edge of screen
-        screen_width = self.root.winfo_screenwidth()
-        x_position = screen_width - self.WINDOW_WIDTH - 10
-        self.root.geometry(f"+{x_position}+100")
-        
-        # Build UI
-        self._create_widgets()
-        
-        # Start polling for posts
-        self._start_polling()
-    
-    def _create_widgets(self):
-        """Create all UI widgets."""
-        # Header frame
-        header_frame = tk.Frame(self.root, bg=self.COLOR_BG)
-        header_frame.pack(fill=tk.X, padx=self.PADDING, pady=self.PADDING)
-        
-        self.platform_label = tk.Label(
-            header_frame,
-            text="Platform: --",
-            bg=self.COLOR_BG,
-            fg=self.COLOR_TEXT,
-            font=("Arial", 12, "bold")
-        )
-        self.platform_label.pack(anchor=tk.W)
-        
-        self.post_id_label = tk.Label(
-            header_frame,
-            text="Post ID: --",
-            bg=self.COLOR_BG,
-            fg=self.COLOR_TEXT_MUTED,
-            font=("Arial", 10)
-        )
-        self.post_id_label.pack(anchor=tk.W)
-        
-        # Separator
-        ttk.Separator(self.root, orient=tk.HORIZONTAL).pack(fill=tk.X, padx=self.PADDING)
-        
-        # Button frame
-        button_frame = tk.Frame(self.root, bg=self.COLOR_BG)
-        button_frame.pack(fill=tk.BOTH, expand=True, padx=self.PADDING, pady=self.PADDING)
-        
-        # OPEN URL Button
-        self.btn_open_url = tk.Button(
-            button_frame,
-            text="OPEN URL",
-            bg=self.COLOR_BUTTON_BLUE,
-            fg=self.COLOR_TEXT,
-            font=("Arial", 12, "bold"),
-            height=2,
-            command=self._on_open_url,
-            state=tk.DISABLED
-        )
-        self.btn_open_url.pack(fill=tk.X, pady=5)
-        
-        # COPY TITLE Button
-        self.btn_copy_title = tk.Button(
-            button_frame,
-            text="COPY TITLE",
-            bg=self.COLOR_BUTTON_BLUE,
-            fg=self.COLOR_TEXT,
-            font=("Arial", 12, "bold"),
-            height=2,
-            command=self._on_copy_title,
-            state=tk.DISABLED
-        )
-        self.btn_copy_title.pack(fill=tk.X, pady=5)
-        
-        # COPY BODY Button
-        self.btn_copy_body = tk.Button(
-            button_frame,
-            text="COPY BODY",
-            bg=self.COLOR_BUTTON_BLUE,
-            fg=self.COLOR_TEXT,
-            font=("Arial", 12, "bold"),
-            height=2,
-            command=self._on_copy_body,
-            state=tk.DISABLED
-        )
-        self.btn_copy_body.pack(fill=tk.X, pady=5)
-        
-        # COPY IMAGE Button
-        self.btn_copy_image = tk.Button(
-            button_frame,
-            text="COPY IMAGE",
-            bg=self.COLOR_BUTTON_BLUE,
-            fg=self.COLOR_TEXT,
-            font=("Arial", 12, "bold"),
-            height=2,
-            command=self._on_copy_image,
-            state=tk.DISABLED
-        )
-        self.btn_copy_image.pack(fill=tk.X, pady=5)
-        
-        # Separator
-        ttk.Separator(button_frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=10)
-        
-        # Email checkbox frame
-        self.email_frame = tk.Frame(button_frame, bg=self.COLOR_BG)
-        self.email_frame.pack(fill=tk.X, pady=5)
-        
-        self.email_var = tk.BooleanVar()
-        self.email_checkbox = tk.Checkbutton(
-            self.email_frame,
-            text="Send Email Notification",
-            variable=self.email_var,
-            bg=self.COLOR_BG,
-            fg=self.COLOR_TEXT,
-            selectcolor=self.COLOR_BG,
-            font=("Arial", 10),
-            state=tk.DISABLED
-        )
-        self.email_checkbox.pack(anchor=tk.W)
-        
-        # Separator
-        ttk.Separator(button_frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=10)
-        
-        # POST Button
-        self.btn_post = tk.Button(
-            button_frame,
-            text="POST",
-            bg=self.COLOR_BUTTON_ORANGE,
-            fg=self.COLOR_TEXT,
-            font=("Arial", 14, "bold"),
-            height=2,
-            command=self._on_post,
-            state=tk.DISABLED
-        )
-        self.btn_post.pack(fill=tk.X, pady=5)
-        
-        # Separator
-        ttk.Separator(button_frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=10)
-        
-        # Success/Failed button frame
-        result_frame = tk.Frame(button_frame, bg=self.COLOR_BG)
-        result_frame.pack(fill=tk.X, pady=5)
-        
-        self.btn_success = tk.Button(
-            result_frame,
-            text="✓ SUCCESS",
-            bg=self.COLOR_BUTTON_GREEN,
-            fg=self.COLOR_TEXT,
-            font=("Arial", 11, "bold"),
-            height=2,
-            width=12,
-            command=self._on_success,
-            state=tk.DISABLED
-        )
-        self.btn_success.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0, 5))
-        
-        self.btn_failed = tk.Button(
-            result_frame,
-            text="✗ FAILED",
-            bg=self.COLOR_BUTTON_RED,
-            fg=self.COLOR_TEXT,
-            font=("Arial", 11, "bold"),
-            height=2,
-            width=12,
-            command=self._on_failed,
-            state=tk.DISABLED
-        )
-        self.btn_failed.pack(side=tk.RIGHT, expand=True, fill=tk.X, padx=(5, 0))
-        
-        # Status bar
-        self.status_label = tk.Label(
-            self.root,
-            text="Status: Waiting for post...",
-            bg=self.COLOR_BG,
-            fg=self.COLOR_TEXT_MUTED,
-            font=("Arial", 9)
-        )
-        self.status_label.pack(side=tk.BOTTOM, fill=tk.X, padx=self.PADDING, pady=self.PADDING)
+---
+
+## Running the OSP
+
+### Manual Start
+```powershell
+cd C:\Users\ultra\Development\ProxMox\W10-Drivers\SocialWorker
+python osp_gui.py
+```
+
+### Dependencies
+The existing requirements.txt is already set up:
+```
+PyQt6>=6.5.0
+requests>=2.31.0
+Pillow>=10.0.0
+pyperclip>=1.8.2
+pygetwindow>=0.0.9
+pywin32>=306
+websockets>=12.0
+```
+
+Install:
+```powershell
+pip install -r requirements.txt
+```
+
+---
+
+## Keyboard Shortcuts
+
+| Shortcut | Action |
+|----------|--------|
+| Ctrl+1 | OPEN URL |
+| Ctrl+2 | COPY TITLE |
+| Ctrl+3 | COPY BODY |
+| Ctrl+4 | COPY IMAGE |
+| Ctrl+5 | POST (ready to post) |
+| Ctrl+Enter | SUCCESS |
+| Ctrl+Backspace | FAILED |
+| Ctrl+Right | Next job |
+| Ctrl+Left | Previous job |
     
     def _update_status(self, message: str):
         """Update the status bar message."""
