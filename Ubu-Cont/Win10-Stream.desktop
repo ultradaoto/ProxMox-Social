@@ -1,0 +1,11 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Windows 10 Stream Server
+Comment=Start the Interactive VNC Stream Server
+Exec=/home/ultra/proxmox-social/Ubu-Cont/venv/bin/python3 /home/ultra/proxmox-social/Ubu-Cont/src/vnc_stream_server.py
+Icon=utilities-terminal
+Path=/home/ultra/proxmox-social/Ubu-Cont/src
+Terminal=true
+StartupNotify=true
+Categories=Development;

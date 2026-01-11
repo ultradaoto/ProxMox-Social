@@ -191,6 +191,7 @@ VIEWER_HTML = """
     <div class="instructions">Focus image to enable keyboard control</div>
 
     <div class="controls">
+        <button onclick="sendHotkey(['ctrl', 'alt', 'delete'])" style="background: #d63031;">Ctrl+Alt+Del</button>
         <button onclick="snapshot()">Ref Snap</button>
         <button onclick="location.reload()">Reconnect</button>
     </div>
@@ -202,6 +203,20 @@ VIEWER_HTML = """
         const container = document.getElementById('view-container');
         const info = document.getElementById('coords');
 
+        async function sendHotkey(keys) {
+            info.innerText = `Sending Hotkey: ${keys.join('+')}...`;
+            try {
+                await fetch('/hotkey', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({keys: keys})
+                });
+                info.innerText = `Sent Hotkey`;
+            } catch (err) {
+                info.innerText = `Hotkey Error: ${err}`;
+            }
+        }
+
         // Track mouse coords
         img.addEventListener('mousemove', (e) => {
             const rect = img.getBoundingClientRect();
@@ -212,39 +227,83 @@ VIEWER_HTML = """
             info.innerText = `Pos: ${x}, ${y}`;
         });
 
-        // Handle Click
-        img.addEventListener('click', async (e) => {
-            container.focus(); // Ensure keyboard focus
-            
+        // Helper to get coords
+        function getCoords(e) {
             const rect = img.getBoundingClientRect();
             const scaleX = TARGET_WIDTH / rect.width;
             const scaleY = TARGET_HEIGHT / rect.height;
-            
-            const x = Math.round((e.clientX - rect.left) * scaleX);
-            const y = Math.round((e.clientY - rect.top) * scaleY);
-            
-            info.innerText = `Sending Click: ${x}, ${y}...`;
-            
+            return {
+                x: Math.round((e.clientX - rect.left) * scaleX),
+                y: Math.round((e.clientY - rect.top) * scaleY)
+            };
+        }
+
+        async function sendClick(x, y, button) {
+            info.innerText = `Sending Click (${button}): ${x}, ${y}...`;
             try {
                 const resp = await fetch('/click', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({x: x, y: y, button: 'left'})
+                    body: JSON.stringify({x: x, y: y, button: button})
                 });
                 const data = await resp.json();
                 if(data.success) {
-                    info.innerText = `Clicked: ${x}, ${y}`;
+                    info.innerText = `Clicked (${button}): ${x}, ${y}`;
                 } else {
                     info.innerText = `Error: ${data.error}`;
                 }
             } catch (err) {
                 info.innerText = `Req Failed: ${err}`;
             }
+        }
+
+        // Handle Left Click
+        img.addEventListener('click', async (e) => {
+            container.focus(); 
+            const coords = getCoords(e);
+            await sendClick(coords.x, coords.y, 'left');
         });
+
+        // Handle Right Click (Context Menu)
+        img.addEventListener('contextmenu', async (e) => {
+            e.preventDefault(); // Prevent browser menu
+            container.focus();
+            const coords = getCoords(e);
+            await sendClick(coords.x, coords.y, 'right');
+        });
+
+        // Handle Scroll Loop
+        let scrollTimeout = null;
+        container.addEventListener('wheel', async (e) => {
+            e.preventDefault();
+            
+            // User Requested Tuning:
+            // 1. Invert direction (-1)
+            // 2. Reduce intensity to 1% of raw (0.01) - 10% of previous
+            const SCROLL_FACTOR = -0.01;
+            
+            const delta = Math.round(e.deltaY * SCROLL_FACTOR);
+            
+            // Filter noise
+            if (delta === 0) return;
+
+            // Info update
+            info.innerText = `Scrolling: ${delta} (Raw: ${Math.round(e.deltaY)})`;
+
+            try {
+                await fetch('/scroll', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({delta: delta})
+                });
+            } catch (err) {
+                console.error("Scroll fail:", err);
+            }
+        }, { passive: false });
 
         // Handle Keyboard
         container.addEventListener('keydown', async (e) => {
-            e.preventDefault(); // Stop scrolling/etc in browser
+            e.preventDefault(); 
             
             const key = e.key;
             console.log("Key:", key, "Ctrl:", e.ctrlKey);
@@ -401,6 +460,49 @@ def handle_keypress():
 
     except Exception as e:
         logger.error(f"Key handler failed: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/scroll', methods=['POST'])
+def handle_scroll():
+    """Handle interactive scroll."""
+    try:
+        data = request.json
+        delta = data.get('delta')
+        
+        if delta is None:
+            return jsonify({"error": "Missing delta"}), 400
+
+        ctrl = get_input_controller()
+        if ctrl:
+            # Send raw scroll
+            ctrl.scroll_raw(delta)
+            return jsonify({"success": True})
+        else:
+            return jsonify({"error": "Controller not available"}), 500
+
+    except Exception as e:
+        logger.error(f"Scroll handler failed: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/hotkey', methods=['POST'])
+def handle_hotkey():
+    """Handle hotkey combinations."""
+    try:
+        data = request.json
+        keys = data.get('keys')
+        
+        if not keys or not isinstance(keys, list):
+            return jsonify({"error": "Missing or invalid keys list"}), 400
+
+        ctrl = get_input_controller()
+        if ctrl:
+            ctrl.hotkey(*keys)
+            return jsonify({"success": True})
+        else:
+            return jsonify({"error": "Controller not available"}), 500
+
+    except Exception as e:
+        logger.error(f"Hotkey handler failed: {e}")
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
