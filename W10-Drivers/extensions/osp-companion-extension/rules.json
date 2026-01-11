@@ -58,6 +58,8 @@
         "color": "#f97316",
         "contextText": "Send email to all members",
         "domain": "www.skool.com",
+        "ensureVisible": true,
+        "excludedContextText": "",
         "id": "mk99rs4s",
         "label": "E-Mail",
         "labelPosition": "bottom",

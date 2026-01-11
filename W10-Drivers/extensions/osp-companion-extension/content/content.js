@@ -96,6 +96,27 @@
 
         if (element && isVisible(element)) {
             createHighlight(element, rule);
+
+            // 3. Ensure Visible (Auto-Scroll)
+            if (rule.ensureVisible) {
+                const rect = element.getBoundingClientRect();
+                const viewportHeight = window.innerHeight;
+
+                const buffer = 150; // Space for label + padding
+
+                // If element is below the fold (including buffer)
+                if (rect.bottom + buffer > viewportHeight) {
+                    // Debounce scroll to avoid fighting user
+                    if (!element._lastScroll || Date.now() - element._lastScroll > 2000) {
+                        // Scroll down just enough to show element + buffer
+                        const scrollAmount = rect.bottom - viewportHeight + buffer;
+                        window.scrollBy({ top: scrollAmount, behavior: 'smooth' });
+                        element._lastScroll = Date.now();
+                        // block: 'end' aligns to absolute bottom, which cuts off label.
+                        // window.scrollBy allows us to add the custom buffer.
+                    }
+                }
+            }
         }
     }
 
@@ -514,6 +535,14 @@
                 </div>
 
                 <div class="osp-form-group">
+                     <label class="osp-label" style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+                        <input type="checkbox" id="osp-ensure-visible" ${existingRule && existingRule.ensureVisible ? 'checked' : ''}>
+                        <span>⚓ Ensure Visible (Auto-Scroll)</span>
+                    </label>
+                    <div style="font-size:10px; color:#6b7280; margin-left:20px;">If this falls off-screen, auto-scroll to keep it visible.</div>
+                </div>
+
+                <div class="osp-form-group">
                     <label class="osp-label" style="display:flex; justify-content:space-between;">
                         <span>CSS Selector</span>
                         <span id="osp-match-count" style="color:${isUnique ? '#10b981' : '#f59e0b'}">
@@ -615,6 +644,7 @@
             const position = modal.querySelector('.osp-pos-btn.selected').dataset.value;
             const contextText = contextInput.value ? contextInput.value.trim() : '';
             const excludedContextText = excludedContextInput.value ? excludedContextInput.value.trim() : '';
+            const ensureVisible = modal.querySelector('#osp-ensure-visible').checked;
             const finalSelector = selectorInput.value.trim();
 
             const rule = {
@@ -626,7 +656,8 @@
                 style: shape,
                 labelPosition: position,
                 contextText: contextText,
-                excludedContextText: excludedContextText
+                excludedContextText: excludedContextText,
+                ensureVisible: ensureVisible
             };
 
             saveUserRule(rule);
@@ -654,7 +685,7 @@
                 if (!isEditorMode) applyAllHighlights();
             });
         });
-        observer.observe(document.body, { childList: true, subtree: true });
+        observer.observe(document.body, { childList: true, subtree: true, characterData: true, attributes: true });
 
         window.addEventListener('resize', () => {
             if (!isEditorMode) applyAllHighlights();
