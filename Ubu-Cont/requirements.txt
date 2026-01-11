@@ -1,9 +1,12 @@
-# Ubuntu AI Controller - Python Dependencies
+# Ubuntu Brain Agent - Python Dependencies
 # Install with: pip install -r requirements.txt
 
 # ===========================================
-# NEW SIMPLIFIED ARCHITECTURE
+# UBUNTU BRAIN AGENT ARCHITECTURE
 # ===========================================
+
+# Async HTTP (for API calls and Ollama)
+aiohttp>=3.9.0
 
 # VNC/Screen Capture
 vncdotool>=1.1.0
@@ -13,7 +16,7 @@ Pillow>=10.0.0
 # Note: Install Ollama separately: curl https://ollama.ai/install.sh | sh
 # Then pull model: ollama pull qwen2.5-vl:7b
 
-# HTTP/Networking
+# HTTP/Networking (sync fallback)
 requests>=2.31.0
 
 # Data Processing

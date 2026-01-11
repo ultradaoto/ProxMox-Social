@@ -75,5 +75,17 @@
         "labelPosition": "inside",
         "selector": ".styled__SubmitButtonWrapper-sc-41pcfm-2",
         "style": "rectangle"
+    },
+    {
+        "color": "#10b981",
+        "contextText": "",
+        "domain": "www.skool.com",
+        "ensureVisible": false,
+        "excludedContextText": "",
+        "id": "mk9ka3zu",
+        "label": "SUCCESS: Post Created",
+        "labelPosition": "top",
+        "selector": ".styled__PostDetailHeader-sc-g7syap-18 > .styled__BoxWrapper-sc-esqoz3-0 > .styled__ButtonWrapper-sc-1crx28g-1",
+        "style": "rectangle"
     }
 ]
