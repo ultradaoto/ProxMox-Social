@@ -2,8 +2,8 @@
 """
 Ubuntu Brain Agent - Main Entry Point
 
-This is the BRAIN that orchestrates all social media posting.
-It runs continuously, polling for posts and executing workflows.
+Uses the WORKING VisionController and InputController approach
+from test_osp_click.py that successfully finds and clicks buttons.
 """
 
 import asyncio
@@ -11,6 +11,11 @@ import signal
 import sys
 import os
 from pathlib import Path
+
+# Load environment variables from .env file
+from dotenv import load_dotenv
+env_path = Path(__file__).parent / ".env"
+load_dotenv(env_path)
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent / "src"))
@@ -28,11 +33,13 @@ class UbuntuBrain:
         self.config_path = config_path
         self.orchestrator = None
         self.running = False
+        self._shutdown_count = 0
     
     async def start(self):
         """Start the brain."""
         logger.info("=" * 60)
         logger.info("UBUNTU BRAIN AGENT STARTING")
+        logger.info("Using WORKING VisionController + InputController")
         logger.info("=" * 60)
         
         self.running = True
@@ -58,14 +65,23 @@ class UbuntuBrain:
         logger.info("Ubuntu Brain stopped")
     
     def handle_signal(self, signum, frame):
-        """Handle shutdown signals."""
-        logger.info(f"Received signal {signum}, initiating shutdown...")
+        """Handle shutdown signals - force exit on second signal."""
+        self._shutdown_count += 1
+        
+        if self._shutdown_count >= 2:
+            logger.info(f"Force exit (signal {signum} received {self._shutdown_count} times)")
+            os._exit(0)
+        
+        logger.info(f"Received signal {signum}, initiating shutdown... (send again to force)")
         self.running = False
+        
+        # Cancel all running tasks
+        for task in asyncio.all_tasks():
+            task.cancel()
 
 
 async def main():
     """Main entry point."""
-    # Setup logging
     setup_logging()
     
     brain = UbuntuBrain()
@@ -79,6 +95,8 @@ async def main():
         await brain.start()
     except KeyboardInterrupt:
         logger.info("Keyboard interrupt received")
+    except asyncio.CancelledError:
+        logger.info("Tasks cancelled, shutting down")
     except Exception as e:
         logger.exception(f"Fatal error: {e}")
     finally:

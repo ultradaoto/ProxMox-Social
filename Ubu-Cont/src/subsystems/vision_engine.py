@@ -43,9 +43,10 @@ class ScreenState:
     details: Dict[str, Any]   # Additional details
 
 
+
 class VisionEngine:
     """
-    Vision engine using Qwen2.5-VL via Ollama.
+    Vision engine using Qwen VL via OpenRouter API.
     
     This is the EYES of the system. It answers questions about what's on screen.
     It does NOT make decisions about what to do next.
@@ -53,22 +54,23 @@ class VisionEngine:
     
     def __init__(
         self,
-        model: str = "qwen2.5-vl:7b",
-        ollama_host: str = "localhost",
-        ollama_port: int = 11434,
-        timeout: int = 60
+        model: str = "qwen/qwen-2-vl-72b-instruct",
+        api_key: str = "",
+        timeout: int = 60,
+        **kwargs  # Accept extra args for compatibility
     ):
         """
         Initialize vision engine.
         
         Args:
-            model: Ollama vision model name
-            ollama_host: Ollama server host
-            ollama_port: Ollama server port
+            model: OpenRouter vision model name
+            api_key: OpenRouter API key
             timeout: Request timeout in seconds
         """
+        import os
         self.model = model
-        self.base_url = f"http://{ollama_host}:{ollama_port}"
+        self.api_key = api_key or os.environ.get("OPENROUTER_API_KEY", "")
+        self.base_url = "https://openrouter.ai/api/v1"
         self.timeout = aiohttp.ClientTimeout(total=timeout)
         self.session: Optional[aiohttp.ClientSession] = None
         
@@ -77,29 +79,26 @@ class VisionEngine:
         self.temp_dir.mkdir(exist_ok=True)
     
     async def initialize(self) -> bool:
-        """Initialize HTTP session and verify model is available."""
-        self.session = aiohttp.ClientSession(timeout=self.timeout)
+        """Initialize HTTP session and verify API key is available."""
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://social.sterlingcooley.com",
+            "X-Title": "Ubuntu Brain Agent"
+        }
         
-        # Check if model is available
-        try:
-            async with self.session.get(f"{self.base_url}/api/tags") as response:
-                if response.status == 200:
-                    data = await response.json()
-                    models = [m.get("name", "") for m in data.get("models", [])]
-                    
-                    if any(self.model in m for m in models):
-                        logger.info(f"Vision engine initialized with model: {self.model}")
-                        return True
-                    else:
-                        logger.warning(f"Model {self.model} not found. Available: {models}")
-                        logger.info(f"Pull model with: ollama pull {self.model}")
-                        return False
-                        
-        except Exception as e:
-            logger.error(f"Failed to connect to Ollama: {e}")
-            logger.info("Vision engine will work when Ollama is running on Ubuntu VM")
+        self.session = aiohttp.ClientSession(
+            timeout=self.timeout,
+            headers=headers
+        )
         
-        return False
+        if not self.api_key:
+            logger.warning("No OpenRouter API key provided")
+            logger.info("Set OPENROUTER_API_KEY environment variable")
+            return False
+        
+        logger.info(f"Vision engine initialized with model: {self.model}")
+        return True
     
     async def shutdown(self):
         """Close HTTP session."""
@@ -110,12 +109,13 @@ class VisionEngine:
     def _image_to_base64(self, image: Image.Image) -> str:
         """Convert PIL Image to base64 string."""
         buffer = io.BytesIO()
-        image.save(buffer, format="PNG")
+        # Use JPEG for smaller payload
+        image.save(buffer, format="JPEG", quality=85)
         return base64.b64encode(buffer.getvalue()).decode()
     
     async def _query_vision(self, image: Image.Image, prompt: str) -> str:
         """
-        Send query to vision model.
+        Send query to vision model via OpenRouter API.
         
         Args:
             image: Screenshot to analyze
@@ -128,27 +128,41 @@ class VisionEngine:
         
         payload = {
             "model": self.model,
-            "prompt": prompt,
-            "images": [image_b64],
-            "stream": False
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{image_b64}"
+                            }
+                        }
+                    ]
+                }
+            ],
+            "max_tokens": 500
         }
         
         try:
             async with self.session.post(
-                f"{self.base_url}/api/generate",
+                f"{self.base_url}/chat/completions",
                 json=payload
             ) as response:
                 
                 if response.status == 200:
                     data = await response.json()
-                    return data.get("response", "")
+                    return data.get("choices", [{}])[0].get("message", {}).get("content", "")
                 else:
-                    logger.error(f"Vision query failed: {response.status}")
+                    error_text = await response.text()
+                    logger.error(f"Vision query failed: {response.status} - {error_text[:200]}")
                     return ""
                     
         except Exception as e:
             logger.exception(f"Vision query error: {e}")
             return ""
+
     
     def _parse_json_response(self, response: str) -> Optional[dict]:
         """Extract and parse JSON from model response."""

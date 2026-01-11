@@ -8,11 +8,10 @@ vnc:
   password: "Pa$$word"    # Set if VNC password is required
   display: 0              # VNC display number
 
-# Vision Model Configuration
+# Vision Model Configuration (OpenRouter API)
 vision:
-  model: "qwen2.5-vl:7b"               # Ollama model name
-  ollama_host: "http://localhost:11434" # Ollama API endpoint
-  timeout: 60                           # Vision query timeout (seconds)
+  model: "qwen/qwen-2.5-vl-72b-instruct"   # OpenRouter model ID (Qwen 2.5 VL)
+  timeout: 60                               # Vision query timeout (seconds)
 
 # Input Injection to Proxmox Host
 input:
@@ -29,7 +28,7 @@ workflows:
 # Social Dashboard API
 api:
   base_url: "https://social.sterlingcooley.com/api"
-  api_key: ""           # Set via environment variable or here
+  api_key: "${API_KEY}"  # Loaded from environment variable
   poll_interval: 60     # Seconds between queue checks
   request_timeout: 10   # API request timeout
 
