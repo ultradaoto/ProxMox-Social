@@ -1,105 +1,62 @@
-# Ubuntu Brain Agent Configuration
+# Ubuntu Controller Configuration
 # Social Media Automation System
 
-# ==========================================
-# API Configuration
-# ==========================================
-api:
-  base_url: "https://social.sterlingcooley.com/api"
-  api_key: ""                    # Set via environment variable ${API_KEY}
-  poll_interval_seconds: 30      # Seconds between queue checks
-  timeout_seconds: 10            # API request timeout
-
-# ==========================================
 # VNC Connection to Windows 10 VM
-# ==========================================
 vnc:
-  host: "192.168.100.20"         # Windows 10 VM IP on vmbr1
-  port: 5900                     # VNC port
-  password: "${VNC_PASSWORD}"    # Set via environment variable
-  display: 0                     # VNC display number
+  host: "192.168.100.101"  # Windows 10 VM IP on vmbr1
+  port: 5900              # VNC port
+  password: "Pa$$word"    # Set if VNC password is required
+  display: 0              # VNC display number
 
-# Aliases for backwards compatibility
-windows_vm:
-  vnc_host: "192.168.100.20"
-  vnc_port: 5900
-  vnc_password: "${VNC_PASSWORD}"
-
-# ==========================================
-# Windows Credentials (for login subroutine)
-# ==========================================
-windows_credentials:
-  username: "User"
-  password: "${WINDOWS_PASSWORD}"  # Set via environment variable
-
-# ==========================================
-# Vision Model Configuration (Ollama)
-# ==========================================
+# Vision Model Configuration
 vision:
-  model: "qwen2.5-vl:7b"         # Ollama vision model name
-  ollama_host: "localhost"       # Ollama server host
-  ollama_port: 11434             # Ollama server port  
-  timeout_seconds: 60            # Vision query timeout
+  model: "qwen2.5-vl:7b"               # Ollama model name
+  ollama_host: "http://localhost:11434" # Ollama API endpoint
+  timeout: 60                           # Vision query timeout (seconds)
 
-# ==========================================
-# Input Injection (Proxmox Host API)
-# ==========================================
+# Input Injection to Proxmox Host
 input:
   proxmox_host: "192.168.100.1"  # Proxmox host IP on vmbr1
   api_port: 8888                 # Input API port
   timeout: 5                     # Request timeout (seconds)
 
-# Alias for backwards compatibility
-proxmox:
-  host: "192.168.100.1"
-  input_api_port: 8888
-
-# ==========================================
 # Workflow Configuration
-# ==========================================
-workflow:
-  screenshot_delay_ms: 500       # Wait after action before screenshot
-  action_delay_ms: 300           # Wait between actions
-  max_retries: 3                 # Retries per step on failure
-  step_timeout_seconds: 30       # Max seconds to wait for each step
-
-# Legacy alias
 workflows:
-  max_retries: 3
-  step_timeout: 30
-  inter_step_delay: 1
+  max_retries: 3        # Max retries per step on failure
+  step_timeout: 30      # Max seconds to wait for each step
+  inter_step_delay: 1   # Seconds to pause between steps
 
-# ==========================================
-# Logging Configuration
-# ==========================================
+# Social Dashboard API
+api:
+  base_url: "https://social.sterlingcooley.com/api"
+  api_key: ""           # Set via environment variable or here
+  poll_interval: 60     # Seconds between queue checks
+  request_timeout: 10   # API request timeout
+
+# Logging
 logging:
-  level: "INFO"                  # DEBUG, INFO, WARNING, ERROR, CRITICAL
-  log_dir: "logs"                # Directory for log files
-  save_screenshots: true         # Save debug screenshots
-  screenshot_dir: "logs/screenshots"
+  level: "INFO"         # DEBUG, INFO, WARNING, ERROR, CRITICAL
+  file: "/var/log/social-automation/orchestrator.log"
+  max_bytes: 10485760   # 10MB
+  backup_count: 5       # Keep 5 old log files
 
-# ==========================================
-# Platform-specific settings
-# ==========================================
+# Platform-specific settings (optional)
 platforms:
-  skool:
-    enabled: true
-    post_timeout: 60             # Max seconds for entire post workflow
-  
   instagram:
     enabled: true
-    upload_timeout: 30           # Extended timeout for video uploads
+    upload_timeout: 30  # Extended timeout for video uploads
   
   facebook:
-    enabled: false               # Not yet implemented
+    enabled: false      # Not yet implemented
   
   tiktok:
-    enabled: false               # Not yet implemented
+    enabled: false      # Not yet implemented
+  
+  skool:
+    enabled: false      # Not yet implemented
 
-# ==========================================
 # Performance tuning
-# ==========================================
 performance:
-  capture_quality: 90            # JPEG quality for screenshots (1-100)
-  vision_response_cache: true    # Cache vision responses for repeated queries
-  parallel_processing: false     # Process multiple posts concurrently (future feature)
+  capture_quality: 90         # JPEG quality for screenshots (1-100)
+  vision_response_cache: true # Cache vision responses for repeated queries
+  parallel_processing: false  # Process multiple posts concurrently (future feature)
