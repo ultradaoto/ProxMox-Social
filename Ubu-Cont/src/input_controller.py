@@ -125,6 +125,10 @@ class InputController:
         except Exception as e:
             logger.error(f"Error sending key: {e}")
 
+    def scroll_raw(self, delta):
+        """Send raw scroll command."""
+        self.mouse._send_mouse_wheel(delta)
+
 if __name__ == "__main__":
     ic = InputController()
     ic.connect()

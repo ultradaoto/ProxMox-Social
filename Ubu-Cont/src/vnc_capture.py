@@ -46,6 +46,11 @@ class VNCCapture:
     
     def _verify_connection(self) -> bool:
         """Verify VNC connection is available."""
+        # Fast fail if TCP connect fails
+        if not self._check_port_open(self.host, self.port):
+            logger.info("VNC connection will be established when running on Ubuntu VM")
+            return False
+            
         try:
             test_img = self.capture()
             if test_img:
@@ -55,6 +60,17 @@ class VNCCapture:
             logger.warning(f"VNC connection test failed: {e}")
             logger.info("VNC connection will be established when running on Ubuntu VM")
         return False
+    
+    def _check_port_open(self, host: str, port: int, timeout: int = 2) -> bool:
+        """Check if a TCP port is open."""
+        import socket
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                sock.settimeout(timeout)
+                result = sock.connect_ex((host, port))
+                return result == 0
+        except:
+            return False
     
     def capture(self) -> Optional[Image.Image]:
         """
@@ -80,7 +96,7 @@ class VNCCapture:
             result = subprocess.run(
                 cmd,
                 capture_output=True,
-                timeout=10
+                timeout=2
             )
             
             if result.returncode != 0:
@@ -113,9 +129,13 @@ class VNCCapture:
     def _capture_with_vncdotool(self) -> Optional[Image.Image]:
         """Alternative capture using vncdotool library."""
         try:
+            import socket
             from vncdotool import api as vnc_api
             
             temp_file = self._temp_dir / f"capture_{int(time.time() * 1000)}.png"
+            
+            # Set timeout for connection
+            socket.setdefaulttimeout(3)
             
             # Connect and capture
             client = vnc_api.connect(
@@ -214,26 +234,43 @@ if __name__ == "__main__":
         capturer = VNCCapture()
         print("      Module loaded successfully")
         
-        print("[2/2] Attempting screen capture...")
-        img = capturer.capture()
-        
-        if img:
-            print(f"      [OK] Capture successful! Resolution: {img.size}")
+        # Check connectivity before attempting capture to avoid timeouts
+        import socket
+        can_connect = False
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(1)
+            result = sock.connect_ex((capturer.host, capturer.port))
+            can_connect = (result == 0)
+            sock.close()
+        except:
+            pass
             
-            # Use platform-appropriate temp path
-            if sys.platform == "win32":
-                temp_path = "C:/Temp/test_capture.png"
-                import os
-                os.makedirs("C:/Temp", exist_ok=True)
+        if can_connect:
+            print("[2/2] Attempting screen capture...")
+            img = capturer.capture()
+            
+            if img:
+                print(f"      [OK] Capture successful! Resolution: {img.size}")
+                
+                 # Use platform-appropriate temp path
+                if sys.platform == "win32":
+                    temp_path = "C:/Temp/test_capture.png"
+                    import os
+                    os.makedirs("C:/Temp", exist_ok=True)
+                else:
+                    temp_path = "/tmp/test_capture.png"
+                
+                img.save(temp_path)
+                print(f"      [OK] Saved to {temp_path}")
+                print("")
+                print("[SUCCESS] vnc_capture.py test PASSED")
             else:
-                temp_path = "/tmp/test_capture.png"
-            
-            img.save(temp_path)
-            print(f"      [OK] Saved to {temp_path}")
-            print("")
-            print("[SUCCESS] vnc_capture.py test PASSED")
+                print("      [INFO] No image captured (VNC auth failed or other issue)")
         else:
-            print("      [INFO] No image captured (VNC not accessible)")
+            print("[2/2] Checking VNC connectivity...")
+            print(f"      [INFO] Host {capturer.host}:{capturer.port} unreachable (expected in dev)")
+            print("      [INFO] Skipping actual capture to avoid timeout")
             print("")
             print("[INFO] Module structure is valid, will work on Ubuntu VM")
             

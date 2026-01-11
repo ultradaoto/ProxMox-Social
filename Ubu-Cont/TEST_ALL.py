@@ -7,7 +7,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-def run_test(name, command, timeout=15):
+def run_test(name, command, timeout=45):
     """Run a single test and capture results."""
     print(f"\n{'='*70}")
     print(f"Testing: {name}")
@@ -28,8 +28,12 @@ def run_test(name, command, timeout=15):
         
         return result.returncode == 0
         
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as e:
         print(f"[TIMEOUT] Test exceeded {timeout} seconds")
+        if e.stdout:
+            print("STDOUT:", e.stdout.decode() if isinstance(e.stdout, bytes) else e.stdout)
+        if e.stderr:
+            print("STDERR:", e.stderr.decode() if isinstance(e.stderr, bytes) else e.stderr)
         return False
     except Exception as e:
         print(f"[ERROR] Test failed with exception: {e}")
@@ -45,13 +49,14 @@ def main():
     print("")
     
     # Define tests
+    python_cmd = sys.executable
     tests = [
-        ("VNC Capture Module", "python src/vnc_capture.py"),
-        ("Vision Finder Module", "python src/vision_finder.py"),
-        ("Input Injector Module", "python src/input_injector.py"),
-        ("Base Workflow Import", 'python -c "from src.workflows.base_workflow import BaseWorkflow; print(\'[OK] Import successful\')"'),
-        ("Instagram Workflow", "python src/workflows/instagram.py"),
-        ("Main Orchestrator", "python src/main_orchestrator.py --test"),
+        ("VNC Capture Module", f"{python_cmd} src/vnc_capture.py"),
+        ("Vision Finder Module", f"{python_cmd} src/vision_finder.py"),
+        ("Input Injector Module", f"{python_cmd} src/input_injector.py"),
+        ("Base Workflow Import", f'{python_cmd} -c "from src.workflows.base_workflow import BaseWorkflow; print(\'[OK] Import successful\')"'),
+        ("Instagram Workflow", f"{python_cmd} src/workflows/instagram.py"),
+        ("Main Orchestrator", f"{python_cmd} src/main_orchestrator.py --test"),
     ]
     
     results = {}

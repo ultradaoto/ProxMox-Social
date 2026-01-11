@@ -123,7 +123,7 @@ class MainOrchestrator:
             },
             'logging': {
                 'level': 'INFO',
-                'file': '/var/log/orchestrator.log'
+                'file': 'orchestrator.log'
             }
         }
     
