@@ -1,73 +1,55 @@
 document.addEventListener('DOMContentLoaded', () => {
-    const statusIndicator = document.getElementById('status-indicator');
-    const connectionStatus = document.getElementById('connection-status');
-    const btnStart = document.getElementById('btn-start-recording');
-    const btnStop = document.getElementById('btn-stop-recording');
+    const btnEditor = document.getElementById('btn-toggle-editor');
+    const btnClear = document.getElementById('btn-clear-rules');
     const logContainer = document.getElementById('log-container');
+    const platformDisplay = document.getElementById('platform-name');
+    const ruleCountDisplay = document.getElementById('rule-count');
 
-    let currentTabUrl = '';
+    let isEditorActive = false;
 
-    // Poll for status
-    function checkStatus() {
-        chrome.runtime.sendMessage({ action: 'GET_STATUS' }, (response) => {
-            if (chrome.runtime.lastError) {
-                updateStatus(false);
-                return;
-            }
-            if (response) {
-                updateStatus(response.connected, response.recording);
-            }
-        });
+    // init status
+    updateUI();
 
-        // Also check current tab URL
+    // Listen for button clicks
+    btnEditor.addEventListener('click', () => {
+        isEditorActive = !isEditorActive;
+        sendMessageToContent({ type: 'toggle_editor', active: isEditorActive });
+        btnEditor.textContent = isEditorActive ? 'Disable Visual Editor' : 'Enable Visual Editor';
+        addLog(isEditorActive ? 'Editor enabled. Click elements to tag.' : 'Editor disabled.');
+    });
+
+    btnClear.addEventListener('click', () => {
+        if (confirm('Are you sure you want to delete ALL saved highlighting rules?')) {
+            chrome.runtime.sendMessage({ action: 'CLEAR_RULES' });
+            chrome.storage.local.remove('osp_rules', () => {
+                addLog('Rules cleared from storage.', 'warning');
+                updateUI();
+                // Notify content to reload
+                sendMessageToContent({ type: 'reload_rules' });
+            });
+        }
+    });
+
+    function sendMessageToContent(message) {
         chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
             if (tabs[0]) {
-                currentTabUrl = tabs[0].url || '';
-                updateStepDisplay();
+                const tabId = tabs[0].id;
+                // Check if we can message this tab
+                if (tabs[0].url.startsWith('chrome://') || tabs[0].url.startsWith('edge://')) {
+                    addLog('Cannot use editor on internal pages.', 'error');
+                    return;
+                }
+
+                chrome.tabs.sendMessage(tabId, message).catch(err => {
+                    // Suppress "Receiving end does not exist" which happens if content script isn't ready
+                    if (err.message.includes('Receiving end does not exist')) {
+                        addLog('Page not ready or unsupported. Try reloading the page.', 'error');
+                    } else {
+                        addLog('Error: ' + err.message, 'error');
+                    }
+                });
             }
         });
-    }
-
-    function isInternalPage(url) {
-        return url.startsWith('chrome://') ||
-            url.startsWith('edge://') ||
-            url.startsWith('about:') ||
-            url.startsWith('chrome-extension://');
-    }
-
-    function updateStepDisplay() {
-        const stepEl = document.getElementById('step-display');
-        if (stepEl && isInternalPage(currentTabUrl)) {
-            stepEl.textContent = '⚠️ Internal page';
-            stepEl.style.color = '#eab308';
-        }
-    }
-
-    function updateStatus(isConnected, isRecording) {
-        if (isConnected) {
-            statusIndicator.classList.add('connected');
-            statusIndicator.classList.remove('disconnected');
-            statusIndicator.title = 'Connected';
-            connectionStatus.textContent = 'Connected';
-            connectionStatus.style.color = '#10b981';
-            btnStart.disabled = false;
-        } else {
-            statusIndicator.classList.remove('connected');
-            statusIndicator.classList.add('disconnected');
-            statusIndicator.title = 'Disconnected';
-            connectionStatus.textContent = 'Disconnected';
-            connectionStatus.style.color = '#ef4444';
-            btnStart.disabled = true;
-        }
-
-        // Sync Recording Buttons
-        if (isRecording) {
-            btnStart.classList.add('hidden');
-            btnStop.classList.remove('hidden');
-        } else {
-            btnStop.classList.add('hidden');
-            btnStart.classList.remove('hidden');
-        }
     }
 
     function addLog(msg, type = 'system') {
@@ -78,30 +60,28 @@ document.addEventListener('DOMContentLoaded', () => {
         logContainer.scrollTop = logContainer.scrollHeight;
     }
 
-    // Button Listeners
-    btnStart.addEventListener('click', () => {
-        // Warn if on internal page but still allow recording
-        // (recording will work once user navigates to a real site)
-        if (isInternalPage(currentTabUrl)) {
-            addLog('Note: On internal page. Recording will start when you navigate to a website.', 'warning');
-        }
+    function updateUI() {
+        // get status from content script or storage
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+            if (tabs[0]) {
+                if (tabs[0].url) {
+                    try {
+                        const url = new URL(tabs[0].url);
+                        platformDisplay.textContent = url.hostname;
+                    } catch (e) {
+                        platformDisplay.textContent = "Unknown";
+                    }
+                }
 
-        chrome.runtime.sendMessage({ action: 'OSP_SEND', type: 'start_recording', payload: {} });
-        addLog('Recording started...', 'success');
-        btnStart.classList.add('hidden');
-        btnStop.classList.remove('hidden');
-    });
+                // Check rule count
+                chrome.storage.local.get(['osp_rules'], (result) => {
+                    const rules = result.osp_rules || [];
+                    ruleCountDisplay.textContent = rules.length;
+                });
+            }
+        });
+    }
 
-    btnStop.addEventListener('click', () => {
-        chrome.runtime.sendMessage({ action: 'OSP_SEND', type: 'stop_recording', payload: {} });
-        addLog('Recording stopped.', 'system');
-        btnStop.classList.add('hidden');
-        btnStart.classList.remove('hidden');
-    });
-
-    // Initial check
-    checkStatus();
-    // Poll every 2s
-    setInterval(checkStatus, 2000);
+    // Ping for status updates occasionally
+    setInterval(updateUI, 2000);
 });
-

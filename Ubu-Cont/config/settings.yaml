@@ -1,0 +1,62 @@
+# Ubuntu Controller Configuration
+# Social Media Automation System
+
+# VNC Connection to Windows 10 VM
+vnc:
+  host: "192.168.100.20"  # Windows 10 VM IP on vmbr1
+  port: 5900              # VNC port
+  password: null          # Set if VNC password is required
+  display: 0              # VNC display number
+
+# Vision Model Configuration
+vision:
+  model: "qwen2.5-vl:7b"               # Ollama model name
+  ollama_host: "http://localhost:11434" # Ollama API endpoint
+  timeout: 60                           # Vision query timeout (seconds)
+
+# Input Injection to Proxmox Host
+input:
+  proxmox_host: "192.168.100.1"  # Proxmox host IP on vmbr1
+  api_port: 8888                 # Input API port
+  timeout: 5                     # Request timeout (seconds)
+
+# Workflow Configuration
+workflows:
+  max_retries: 3        # Max retries per step on failure
+  step_timeout: 30      # Max seconds to wait for each step
+  inter_step_delay: 1   # Seconds to pause between steps
+
+# Social Dashboard API
+api:
+  base_url: "https://social.sterlingcooley.com/api"
+  api_key: ""           # Set via environment variable or here
+  poll_interval: 60     # Seconds between queue checks
+  request_timeout: 10   # API request timeout
+
+# Logging
+logging:
+  level: "INFO"         # DEBUG, INFO, WARNING, ERROR, CRITICAL
+  file: "/var/log/social-automation/orchestrator.log"
+  max_bytes: 10485760   # 10MB
+  backup_count: 5       # Keep 5 old log files
+
+# Platform-specific settings (optional)
+platforms:
+  instagram:
+    enabled: true
+    upload_timeout: 30  # Extended timeout for video uploads
+  
+  facebook:
+    enabled: false      # Not yet implemented
+  
+  tiktok:
+    enabled: false      # Not yet implemented
+  
+  skool:
+    enabled: false      # Not yet implemented
+
+# Performance tuning
+performance:
+  capture_quality: 90         # JPEG quality for screenshots (1-100)
+  vision_response_cache: true # Cache vision responses for repeated queries
+  parallel_processing: false  # Process multiple posts concurrently (future feature)

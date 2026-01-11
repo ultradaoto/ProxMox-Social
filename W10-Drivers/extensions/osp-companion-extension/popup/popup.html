@@ -4,30 +4,58 @@
 <head>
     <meta charset="utf-8">
     <link rel="stylesheet" href="popup.css">
+    <style>
+        /* Add minimal extra styles for new buttons */
+        .btn.editor {
+            background-color: #f59e0b;
+            color: white;
+        }
+
+        .btn.editor:hover {
+            background-color: #d97706;
+        }
+
+        .btn.clear {
+            background-color: #ef4444;
+            color: white;
+            margin-top: 8px;
+            font-size: 11px;
+            padding: 4px 8px;
+        }
+
+        .editor-controls {
+            margin-top: 16px;
+            padding-top: 16px;
+            border-top: 1px solid #334155;
+        }
+    </style>
 </head>
 
 <body>
     <div class="container">
         <div class="header">
             <div class="title">OSP Companion</div>
-            <div class="status-indicator disconnected" id="status-indicator" title="Disconnected"></div>
+            <div class="status-indicator connected" id="status-indicator"></div>
         </div>
 
         <div class="content">
             <div class="info-panel">
                 <div class="info-row">
-                    <span class="label">Status:</span>
-                    <span class="value" id="connection-status">Disconnected</span>
-                </div>
-                <div class="info-row">
-                    <span class="label">Step:</span>
-                    <span class="value" id="current-step">-</span>
+                    <span class="label">Platform:</span>
+                    <span class="value" id="platform-name">-</span>
                 </div>
             </div>
 
             <div class="actions">
-                <button id="btn-start-recording" class="btn primary" disabled>Start Recording</button>
-                <button id="btn-stop-recording" class="btn secondary hidden">Stop Recording</button>
+                <button id="btn-toggle-editor" class="btn editor">Enable Visual Editor</button>
+            </div>
+
+            <div class="editor-controls">
+                <div class="info-row">
+                    <span class="label">Saved Rules:</span>
+                    <span class="value" id="rule-count">0</span>
+                </div>
+                <button id="btn-clear-rules" class="btn clear">Clear All Saved Rules</button>
             </div>
 
             <div class="logs" id="log-container">

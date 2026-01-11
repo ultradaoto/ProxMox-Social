@@ -1,107 +1,321 @@
-/* =========================================
-   OSP Integration Styles (Green/Pulse)
-   ========================================= */
+/* ============================================
+   OSP Static Highlight Styles
+   Computer Vision Optimized
+   ============================================ */
 
-/* Highlighted element style */
-.osp-highlighted-element {
-    outline: 2px solid #22c55e !important;
-    outline-offset: 1px !important;
-    box-shadow: 0 0 10px rgba(34, 197, 94, 0.5) !important;
-    animation: osp-pulse-thin 2s ease-in-out infinite !important;
-    transition: outline 0.3s ease, box-shadow 0.3s ease !important;
-}
-
-@keyframes osp-pulse-thin {
-
-    0%,
-    100% {
-        outline-color: rgba(34, 197, 94, 1);
-        box-shadow: 0 0 5px rgba(34, 197, 94, 0.4);
-    }
-
-    50% {
-        outline-color: rgba(34, 197, 94, 0.6);
-        box-shadow: 0 0 15px rgba(34, 197, 94, 0.7);
-    }
-}
-
-/* Highlight overlay (Tag Style) */
-.osp-highlight-overlay {
+.osp-static-highlight {
     position: absolute;
     z-index: 2147483647;
+    /* Maximum z-index */
     pointer-events: none;
-    font-family: 'Segoe UI', system-ui, sans-serif !important;
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
+    /* Don't interfere with clicking */
+
+    /* Default Border (green) - overridden by inline styles */
+    border: 3px solid #10b981;
+    background-color: rgba(16, 185, 129, 0.05);
+
+    /* Sharp corners for clear detection */
+    border-radius: 4px;
+
+    /* No animations - static for screenshots */
+    transition: none;
 }
 
+.osp-static-highlight.osp-shape-circle {
+    border-radius: 50%;
+}
+
+.osp-static-highlight.osp-shape-pill {
+    border-radius: 999px;
+}
+
+.osp-static-highlight.osp-shape-underline {
+    border-top: none;
+    border-left: none;
+    border-right: none;
+    background: transparent;
+    border-bottom-width: 4px;
+    border-radius: 0;
+}
+
+/* Label styling */
 .osp-highlight-label {
-    background: #22c55e;
+    position: absolute;
+    top: -28px;
+    left: 0;
+
+    background-color: #10b981;
+    /* Default - overridden */
     color: #ffffff;
+
     padding: 4px 10px;
     border-radius: 4px;
-    font-size: 12px;
+
+    font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+    font-size: 13px;
     font-weight: 700;
+    line-height: normal;
+
     white-space: nowrap;
-    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    margin-bottom: 4px;
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    transform: translateY(-100%);
-    /* Sit above the element */
+    max-width: 400px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+
+    box-shadow: 0 3px 6px rgba(0, 0, 0, 0.4);
+    opacity: 1 !important;
+    pointer-events: none !important;
+    z-index: 2147483648;
 }
 
-/* Different colors for different actions */
-.osp-highlight-overlay.paste .osp-highlight-label {
-    background: #3b82f6;
+/* Ensure no interference with page elements */
+.osp-static-highlight * {
+    pointer-events: none !important;
 }
 
-.osp-highlight-overlay.submit .osp-highlight-label {
-    background: #ef4444;
+/* Hide highlights when printing */
+@media print {
+    .osp-static-highlight {
+        display: none !important;
+    }
 }
 
-/* Minimal Arrow if needed */
-.osp-highlight-arrow {
-    display: none;
-    /* Removed as requested to avoid occlusion */
+/* ============================================
+   OSP Editor Mode UI (Advanced)
+   ============================================ */
+
+.osp-editor-hover {
+    outline: 2px dashed #3b82f6 !important;
+    outline-offset: 2px !important;
+    cursor: crosshair !important;
+    background-color: rgba(59, 130, 246, 0.1) !important;
 }
 
-/* Instruction Banner */
-.osp-instruction-banner {
+/* The Advanced Modal */
+.osp-advanced-modal {
     position: fixed;
-    bottom: 20px;
-    left: 50%;
-    transform: translateX(-50%);
-    background: rgba(15, 23, 42, 0.95);
-    color: white;
-    padding: 16px 32px;
-    border-radius: 99px;
+    z-index: 2147483647;
+    background: #111827;
+    /* Darker bg */
+    color: #f3f4f6;
+    width: 380px;
+    border-radius: 12px;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.1);
     font-family: 'Segoe UI', system-ui, sans-serif;
-    font-size: 16px;
-    font-weight: 500;
-    z-index: 2147483646;
+    font-size: 14px;
+    overflow: hidden;
+    animation: osp-slide-up 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes osp-slide-up {
+    from {
+        opacity: 0;
+        transform: translateY(20px) scale(0.98);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+.osp-modal-header {
+    background: #1f2937;
+    padding: 12px 16px;
+    border-bottom: 1px solid #374151;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.osp-modal-title {
+    font-weight: 600;
+    font-size: 14px;
+    color: #e5e7eb;
     display: flex;
     align-items: center;
-    gap: 12px;
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    backdrop-filter: blur(8px);
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    opacity: 0;
+    gap: 6px;
 }
 
-.osp-instruction-banner.visible {
-    opacity: 1;
-    bottom: 30px;
+.osp-modal-title::before {
+    content: '';
+    display: block;
+    width: 8px;
+    height: 8px;
+    background: #10b981;
+    border-radius: 50%;
 }
 
-.osp-instruction-icon {
-    font-size: 20px;
+.osp-modal-body {
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
 }
 
-.osp-instruction-text {
-    max-width: 500px;
-    line-height: 1.4;
+/* Form Groups */
+.osp-form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.osp-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #9ca3af;
+    font-weight: 600;
+}
+
+/* Inputs */
+.osp-input {
+    background: #1f2937;
+    border: 1px solid #374151;
+    color: white;
+    padding: 8px 10px;
+    border-radius: 6px;
+    font-size: 13px;
+    width: 100%;
+    box-sizing: border-box;
+    transition: border-color 0.2s;
+}
+
+.osp-input:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+
+/* Selector Pre/Code */
+.osp-code-input {
+    font-family: 'Consolas', monospace;
+    font-size: 11px;
+    color: #d1d5db;
+    background: #000000;
+    border-color: #374151;
+}
+
+/* Color Picker Grid */
+.osp-color-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 8px;
+}
+
+.osp-color-option {
+    height: 32px;
+    border-radius: 6px;
+    cursor: pointer;
+    border: 2px solid transparent;
+    transition: transform 0.1s;
+}
+
+.osp-color-option:hover {
+    transform: scale(1.05);
+}
+
+.osp-color-option.selected {
+    border-color: white;
+    box-shadow: 0 0 0 2px #3b82f6;
+}
+
+/* Shape Options */
+.osp-shape-options {
+    display: flex;
+    gap: 2px;
+    background: #1f2937;
+    padding: 2px;
+    border-radius: 6px;
+}
+
+.osp-shape-btn {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: #9ca3af;
+    padding: 6px;
+    font-size: 12px;
+    cursor: pointer;
+    border-radius: 4px;
+}
+
+.osp-shape-btn.selected {
+    background: #374151;
+    color: white;
+    font-weight: 600;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+/* Footer Actions */
+.osp-modal-footer {
+    padding: 12px 16px;
+    background: #1f2937;
+    /* Same as header */
+    border-top: 1px solid #374151;
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.osp-btn {
+    border: none;
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.1s;
+}
+
+.osp-btn-secondary {
+    background: transparent;
+    color: #9ca3af;
+    border: 1px solid #374151;
+}
+
+.osp-btn-secondary:hover {
+    background: rgba(255, 255, 255, 0.05);
+    color: white;
+}
+
+.osp-btn-icon {
+    padding: 8px 12px;
+    font-size: 14px;
+}
+
+.osp-btn-danger {
+    background: rgba(239, 68, 68, 0.1);
+    color: #ef4444;
+}
+
+.osp-btn-danger:hover {
+    background: #ef4444;
+    color: white;
+}
+
+.osp-btn-debug {
+    background: rgba(168, 85, 247, 0.15);
+    /* Purple tint */
+    color: #ce93d8;
+    margin-right: auto;
+    border: 1px solid rgba(168, 85, 247, 0.3);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.osp-btn-debug:hover {
+    background: #a855f7;
+    color: white;
+    box-shadow: 0 0 15px rgba(168, 85, 247, 0.4);
+}
+
+.osp-btn-primary {
+    background: #10b981;
+    color: white;
+    box-shadow: 0 2px 10px rgba(16, 185, 129, 0.3);
+}
+
+.osp-btn-primary:hover {
+    background: #059669;
 }

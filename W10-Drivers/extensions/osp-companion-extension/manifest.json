@@ -1,15 +1,19 @@
 {
     "manifest_version": 3,
     "name": "OSP Companion",
-    "version": "1.0.0",
-    "description": "Guides AI agents through posting workflows via WebSocket",
+    "version": "2.1.0",
+    "description": "Static Computer Vision Companion for OSP",
     "permissions": [
         "activeTab",
         "scripting",
-        "tabs"
+        "storage"
     ],
     "host_permissions": [
-        "<all_urls>"
+        "*://*.skool.com/*",
+        "*://*.instagram.com/*",
+        "*://*.facebook.com/*",
+        "*://*.tiktok.com/*",
+        "*://*.linkedin.com/*"
     ],
     "background": {
         "service_worker": "background/background.js"
@@ -21,7 +25,11 @@
     "content_scripts": [
         {
             "matches": [
-                "<all_urls>"
+                "*://*.skool.com/*",
+                "*://*.instagram.com/*",
+                "*://*.facebook.com/*",
+                "*://*.tiktok.com/*",
+                "*://*.linkedin.com/*"
             ],
             "js": [
                 "content/content.js"

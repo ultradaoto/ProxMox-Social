@@ -2,34 +2,25 @@
 # Install with: pip install -r requirements.txt
 
 # ===========================================
-# Core Dependencies
+# NEW SIMPLIFIED ARCHITECTURE
 # ===========================================
 
 # VNC/Screen Capture
 vncdotool>=1.1.0
 Pillow>=10.0.0
-opencv-python>=4.8.0
 
-# Vision AI
-torch>=2.0.0
-torchvision>=0.15.0
-ultralytics>=8.0.0
-easyocr>=1.7.0
-pytesseract>=0.3.10
+# Vision AI - Ollama (no torch/ultralytics needed)
+# Note: Install Ollama separately: curl https://ollama.ai/install.sh | sh
+# Then pull model: ollama pull qwen2.5-vl:7b
 
 # HTTP/Networking
 requests>=2.31.0
-httpx>=0.25.0
-websockets>=12.0
 
 # Data Processing
-numpy>=1.24.0
-scipy>=1.11.0
 pyyaml>=6.0
 
 # Utilities
 python-dateutil>=2.8.2
-tqdm>=4.66.0
 
 # ===========================================
 # Behavioral Profiler Dependencies

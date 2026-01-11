@@ -1,599 +1,565 @@
-/**
- * OSP Content Script
- * Highlights elements and reports interactions
- */
 (function () {
-    console.log('[OSP] Content Script Initialized');
+    'use strict';
 
-    let highlightedElement = null;
-    let highlightOverlay = null;
+    // ===== STATE =====
+    let isEditorMode = false;
+    let userRules = [];
+    let highlightElementsMap = new Map(); // Highlight DOM -> {element, rule}
+    let editorHoverElement = null;
 
-    let isRecording = false;
+    // ===== CONFIG =====
+    // Colors: Tailwind css values
+    const COLORS = [
+        { name: 'Green', value: '#10b981' },
+        { name: 'Blue', value: '#3b82f6' },
+        { name: 'Red', value: '#ef4444' },
+        { name: 'Purple', value: '#a855f7' },
+        { name: 'Orange', value: '#f97316' }
+    ];
 
-    // Notify background that content script is ready to receive messages
-    // This is critical for timing - Python should wait for this before sending highlights
-    setTimeout(() => {
-        try {
-            chrome.runtime.sendMessage({
-                action: 'OSP_SEND',
-                type: 'content_ready',
-                payload: {
-                    url: window.location.href,
-                    timestamp: Date.now()
-                }
-            });
-            console.log('[OSP] Sent content_ready signal');
-        } catch (e) {
-            console.log('[OSP] Could not send content_ready:', e);
-        }
-    }, 100); // Small delay to ensure everything is set up
+    // ===== INITIALIZATION =====
+    function init() {
+        console.log('[OSP Vision Helper] Initializing...');
+        loadUserRules(() => applyAllHighlights());
+        observeDomChanges();
+        chrome.runtime.onMessage.addListener(handleMessages);
+    }
 
-    chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-        if (message.action === 'OSP_MESSAGE') {
-            const { ospType, payload } = message;
-            handleOSPMessage(ospType, payload);
-        }
-    });
 
-    // Toggle Recording Mode
-    function toggleRecording(enabled) {
-        if (isRecording === enabled) return;
-        isRecording = enabled;
-        console.log(`[OSP] Recording Mode: ${enabled ? 'ON' : 'OFF'}`);
+    // ===== RULE MANAGEMENT =====
+    function loadUserRules(callback) {
+        chrome.storage.local.get(['osp_rules'], (result) => {
+            if (result.osp_rules) {
+                userRules = result.osp_rules;
+            }
+            if (callback) callback();
+        });
+    }
 
-        if (isRecording) {
-            document.addEventListener('click', onGlobalClick, true);
-            showRecordingIndicator();
+    function saveUserRule(newRule) {
+        if (!newRule.id) newRule.id = Date.now().toString(36);
+
+        // Check if updating existing
+        const index = userRules.findIndex(r => r.id === newRule.id);
+        if (index >= 0) {
+            userRules[index] = newRule;
         } else {
-            document.removeEventListener('click', onGlobalClick, true);
-            hideRecordingIndicator();
+            userRules.push(newRule);
         }
+
+        chrome.storage.local.set({ osp_rules: userRules }, () => {
+            applyAllHighlights();
+        });
     }
 
-    // Visual indicator that recording is active
-    function showRecordingIndicator() {
-        let indicator = document.getElementById('osp-recording-indicator');
-        if (!indicator) {
-            indicator = document.createElement('div');
-            indicator.id = 'osp-recording-indicator';
-            indicator.innerHTML = '🔴 REC';
-            indicator.style.cssText = `
-                position: fixed;
-                top: 10px;
-                right: 10px;
-                background: rgba(239, 68, 68, 0.9);
-                color: white;
-                padding: 8px 12px;
-                border-radius: 4px;
-                font-family: system-ui, sans-serif;
-                font-size: 12px;
-                font-weight: bold;
-                z-index: 999999;
-                pointer-events: none;
-                animation: osp-blink 1s infinite;
-            `;
-            // Add blink animation
-            const style = document.createElement('style');
-            style.textContent = `
-                @keyframes osp-blink {
-                    0%, 100% { opacity: 1; }
-                    50% { opacity: 0.5; }
-                }
-            `;
-            document.head.appendChild(style);
-            document.body.appendChild(indicator);
-        }
-        indicator.style.display = 'block';
+    function deleteUserRule(ruleId) {
+        userRules = userRules.filter(r => r.id !== ruleId);
+        chrome.storage.local.set({ osp_rules: userRules }, () => {
+            applyAllHighlights();
+        });
     }
 
-    function hideRecordingIndicator() {
-        const indicator = document.getElementById('osp-recording-indicator');
-        if (indicator) {
-            indicator.style.display = 'none';
-        }
+
+    // ===== HIGHLIGHTING ENGINE =====
+    function applyAllHighlights() {
+        // Cleanup old highlights matching our system
+        document.querySelectorAll('.osp-static-highlight').forEach(el => el.remove());
+        highlightElementsMap.clear();
+
+        const hostname = window.location.hostname;
+
+        // Apply User Rules
+        const activeUserRules = userRules.filter(rule => hostname.includes(rule.domain));
+        activeUserRules.forEach(rule => processRule(rule));
     }
 
-    function onGlobalClick(event) {
-        if (!isRecording) return;
-        // Filter out programmatic clicks (e.g. from React/Scripts)
-        if (!event.isTrusted) return;
-
-        // Don't report clicks on our own overlay
-        if (event.target.closest('.osp-highlight-overlay')) return;
-
-        try {
-            const selector = getSelector(event.target);
-            console.log('[OSP] Click detected:', event.target.tagName, selector);
-            sendToBackground('interaction_recorded', {
-                type: 'click',
-                selector: selector,
-                element_type: event.target.tagName.toLowerCase(),
-                x: event.clientX,
-                y: event.clientY,
-                timestamp: Date.now()
-            });
-        } catch (e) {
-            console.error('[OSP] Failed to record click:', e);
-        }
-    }
-
-    let lastHighlightTime = 0;
-    let lastHighlightSelector = '';
-    const SPAM_THRESHOLD_MS = 500;
-
-    function handleOSPMessage(type, payload) {
-        console.log('[OSP] Msg Received:', type, payload);
-        switch (type) {
-            case 'highlight_element':
-                const now = Date.now();
-                if (payload.selector === lastHighlightSelector && (now - lastHighlightTime < SPAM_THRESHOLD_MS)) {
-                    console.log('[OSP] Ignoring duplicate highlight request');
-                    return;
-                }
-                lastHighlightTime = now;
-                lastHighlightSelector = payload.selector;
-                highlightElement(payload.selector, payload.label);
-                break;
-            case 'clear_highlights':
-                console.log('[OSP] Clear highlights requested by Python');
-                clearHighlights('python_request');
-                break;
-            case 'start_recording':
-                toggleRecording(true);
-                break;
-            case 'stop_recording':
-                toggleRecording(false);
-                break;
-            case 'show_instruction':
-                showInstruction(payload.text, payload.icon || '💡');
-                break;
-            case 'hide_instruction':
-                hideInstruction();
-                break;
-            case 'suggest_field':
-                suggestField(payload.field);
-                break;
-        }
-    }
-
-    async function highlightElement(selector, label) {
-        console.log('[OSP] Attempting to highlight:', selector, 'Label:', label);
-        clearHighlights('new_highlight');
-
-        // Try to find the element with retries (up to 5s)
+    function processRule(rule) {
         let element = null;
         try {
-            element = await waitForElement(selector, 5000);
-        } catch (e) {
-            // Timed out - try alternatives
+            element = document.querySelector(rule.selector);
+        } catch (e) { }
+
+        if (element && isVisible(element)) {
+            // Verify if selector matches multiple
+            // In debug mode we might want to warn
+            createHighlight(element, rule);
+        }
+    }
+
+    function isVisible(element) {
+        const rect = element.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0;
+    }
+
+
+    // ===== VISUAL RENDERING =====
+    function createHighlight(element, rule) {
+        const highlight = document.createElement('div');
+        highlight.className = 'osp-static-highlight';
+        highlight.dataset.ruleId = rule.id; // Store ID for editing
+
+        // Shape
+        if (rule.style === 'circle') highlight.classList.add('osp-shape-circle');
+        else if (rule.style === 'pill') highlight.classList.add('osp-shape-pill');
+        else if (rule.style === 'underline') highlight.classList.add('osp-shape-underline');
+        else highlight.classList.add('osp-rectangle'); // default
+
+        // Color
+        const color = rule.color || '#10b981';
+        highlight.style.borderColor = color;
+
+        // Label
+        const label = document.createElement('div');
+        label.className = 'osp-highlight-label';
+        label.textContent = rule.label;
+        label.style.backgroundColor = color;
+
+        highlight.appendChild(label);
+        document.body.appendChild(highlight);
+
+        // Position
+        updateHighlightPosition(highlight, element, rule.labelPosition);
+
+        // Store for interaction
+        highlightElementsMap.set(highlight, { element, rule });
+    }
+
+    function updateHighlightPosition(highlight, element, labelPos = 'top') {
+        const rect = element.getBoundingClientRect();
+        highlight.style.left = `${rect.left + window.scrollX}px`;
+        highlight.style.top = `${rect.top + window.scrollY}px`;
+        highlight.style.width = `${rect.width}px`;
+        highlight.style.height = `${rect.height}px`;
+
+        const label = highlight.querySelector('.osp-highlight-label');
+        if (label) {
+            // Reset styles
+            label.style.top = ''; label.style.bottom = ''; label.style.left = '0';
+
+            if (labelPos === 'bottom') {
+                label.style.bottom = '-28px';
+            } else if (labelPos === 'inside') {
+                label.style.top = '2px';
+            } else {
+                // Top (Default)
+                label.style.top = '-28px';
+            }
+        }
+    }
+
+    // ===== DEEP DEBUGGER =====
+    function inspectElement(element, rule = null) {
+        console.clear();
+        console.log('%c OSP Deep Inspector ', 'background: #10b981; color: white; padding: 4px; border-radius: 4px; font-weight: bold; font-size: 14px;');
+
+        // 1. Element Info
+        console.group('🔍 Element Details');
+        console.log('DOM Element:', element);
+        console.log('Dimensions:', element.getBoundingClientRect());
+        console.log('Computed Style:', window.getComputedStyle(element));
+
+        // Attributes
+        const attrs = {};
+        for (let i = 0; i < element.attributes.length; i++) {
+            attrs[element.attributes[i].name] = element.attributes[i].value;
+        }
+        console.log('Attributes:', attrs);
+        console.groupEnd();
+
+        // 2. React Fiber Extraction
+        console.group('⚛️ React Internals');
+        const fiberKey = Object.keys(element).find(key => key.startsWith('__reactFiber$') || key.startsWith('__reactInternalInstance$'));
+        if (fiberKey) {
+            console.log('Fiber Key:', fiberKey);
+            const fiber = element[fiberKey];
+            console.log('Fiber Node:', fiber);
+
+            // Try to dump Props & State
+            if (fiber.memoizedProps) console.log('Props:', fiber.memoizedProps);
+            if (fiber.memoizedState) console.log('State:', fiber.memoizedState);
+            if (fiber.return) console.log('Parent Component:', fiber.return.type);
+        } else {
+            console.warn('No React Fiber data found on this element.');
+        }
+        console.groupEnd();
+
+        // 3. Rule Analysis
+        if (rule) {
+            console.group('📏 Current Rule');
+            console.log('Rule Config:', rule);
+            const matchCount = document.querySelectorAll(rule.selector).length;
+            console.log(`Selector "${rule.selector}" matches ${matchCount} element(s).`);
+            if (matchCount > 1) {
+                console.warn('⚠️ SELECTOR IS NOT UNIQUE! This causes drift.');
+                console.log('Matches:', document.querySelectorAll(rule.selector));
+            }
+            console.groupEnd();
         }
 
-        // If not found, try alternative selectors based on the label
-        if (!element) {
-            console.log('[OSP] Primary selector failed, trying alternatives...');
-            element = await tryAlternativeSelectors(selector, label);
+        // 4. Selector Generation Debug
+        console.group('🛠 Selector Generation Logic');
+        const generated = generateSelector(element);
+        console.log('Auto-Generated Selector:', generated);
+        const genCount = document.querySelectorAll(generated).length;
+        console.log(`Matches ${genCount} element(s).`);
+        console.groupEnd();
+
+        alert('Check Chrome DevTools Console (F12) for deep inspection data.');
+    }
+
+
+    // ===== SELECTOR GENERATION (HARDENED) =====
+    function generateSelector(el) {
+        const selector = _generateRawSelector(el);
+
+        // Verify uniqueness
+        const matches = document.querySelectorAll(selector);
+        if (matches.length === 1) return selector;
+
+        console.warn(`[OSP] Generated selector "${selector}" is not unique (${matches.length}). attempting hardening...`);
+
+        // Hardening 1: Add parent context
+        if (el.parentElement) {
+            const parentSel = _generateRawSelector(el.parentElement);
+            const combined = `${parentSel} > ${selector}`;
+            if (document.querySelectorAll(combined).length === 1) return combined;
         }
 
-        if (!element) {
-            console.warn('[OSP] Element not found (after all attempts):', selector);
-            sendToBackground('element_not_found', { selector: selector });
+        // Hardening 2: Nth-of-type fallback (Very strict but reliable against drift within a list)
+        // This is dangerous if list order changes, but better than random jumping
+        const path = getStrictPath(el);
+        return path;
+    }
+
+    function _generateRawSelector(el) {
+        // 1. ID (only if looks stable - no numbers or long hashes)
+        if (el.id && !/\d{5,}/.test(el.id) && !/ember|react|uid/.test(el.id)) {
+            return `#${CSS.escape(el.id)}`;
+        }
+
+        // 2. Stable Attributes (Prioritized)
+        const stableAttrs = ['data-testid', 'name', 'placeholder', 'aria-label', 'href', 'type'];
+        for (const attr of stableAttrs) {
+            if (el.hasAttribute(attr)) {
+                return `[${attr}="${CSS.escape(el.getAttribute(attr))}"]`;
+            }
+        }
+
+        // 3. Class (Filter junk)
+        if (el.className && typeof el.className === 'string') {
+            const classes = el.className.split(/\s+/).filter(c => {
+                // Ignore hash-like classes (common in styled-components, css modules)
+                if (c.length < 3) return false;
+                if (/[a-zA-Z0-9]{10,}/.test(c)) return false; // Long hashes
+                if (/hover:|focus:|active:/.test(c)) return false; // States
+                if (c.includes('osp-')) return false;
+                return true;
+            });
+
+            // Try first meaningful class
+            if (classes.length > 0) {
+                // Try to verify if this single class is unique enough locally?
+                // No, just return it, verification happens in caller
+                return `.${CSS.escape(classes[0])}`;
+            }
+        }
+
+        return el.tagName.toLowerCase();
+    }
+
+    function getStrictPath(el) {
+        let path = [];
+        let curr = el;
+        // Limit depth to 5 parents to avoid infinitely long selectors
+        for (let i = 0; i < 5; i++) {
+            if (!curr || curr.nodeType !== Node.ELEMENT_NODE) break;
+
+            let sel = curr.tagName.toLowerCase();
+            if (curr.id && !/\d/.test(curr.id)) {
+                sel += `#${CSS.escape(curr.id)}`;
+                path.unshift(sel);
+                break; // ID is usually anchor enough
+            } else {
+                // Use nth-of-type for robustness
+                let sib = curr, nth = 1;
+                while (sib = sib.previousElementSibling) {
+                    if (sib.tagName === curr.tagName) nth++;
+                }
+                sel += `:nth-of-type(${nth})`;
+            }
+            path.unshift(sel);
+            curr = curr.parentElement;
+        }
+        return path.join(' > ');
+    }
+
+
+    // ===== EDITOR MODE =====
+    function handleMessages(request, sender, sendResponse) {
+        if (request.type === 'toggle_editor') toggleEditor(request.active);
+        if (request.type === 'reload_rules') loadUserRules(() => applyAllHighlights());
+    }
+
+    function toggleEditor(active) {
+        isEditorMode = active;
+        if (active) {
+            document.body.style.cursor = 'crosshair';
+            document.addEventListener('mouseover', onEditorHover, true);
+            document.addEventListener('click', onEditorClick, true);
+            document.addEventListener('mouseout', onEditorOut, true);
+
+            // Make highlights clickable
+            document.querySelectorAll('.osp-static-highlight').forEach(el => {
+                el.style.pointerEvents = 'auto';
+                el.style.cursor = 'pointer';
+            });
+        } else {
+            document.body.style.cursor = '';
+            document.removeEventListener('mouseover', onEditorHover, true);
+            document.removeEventListener('click', onEditorClick, true);
+            document.removeEventListener('mouseout', onEditorOut, true);
+
+            removeEditorHover();
+            removeModal();
+
+            // Reset highlights
+            document.querySelectorAll('.osp-static-highlight').forEach(el => {
+                el.style.pointerEvents = 'none';
+            });
+
+            applyAllHighlights();
+        }
+    }
+
+    function onEditorHover(e) {
+        if (e.target.closest('.osp-advanced-modal')) return;
+
+        // If hovering over an existing highlight, highlight IT (visual feedback)
+        if (e.target.classList.contains('osp-static-highlight')) {
             return;
         }
 
-        console.log('[OSP] Element found, creating highlight overlay');
-        highlightedElement = element;
-        highlightOverlay = document.createElement('div');
-        highlightOverlay.className = 'osp-highlight-overlay';
+        if (editorHoverElement && editorHoverElement !== e.target) {
+            editorHoverElement.classList.remove('osp-editor-hover');
+        }
 
-        let extraClass = '';
-        if (label.toLowerCase().includes('paste')) extraClass = 'paste';
-        if (label.toLowerCase().includes('post') || label.toLowerCase().includes('submit')) extraClass = 'submit';
-        if (extraClass) highlightOverlay.classList.add(extraClass);
+        editorHoverElement = e.target;
+        editorHoverElement.classList.add('osp-editor-hover');
+        e.preventDefault();
+        e.stopPropagation();
+    }
 
-        highlightOverlay.innerHTML = `
-            <div class="osp-highlight-label">${label}</div>
+    function removeEditorHover() {
+        if (editorHoverElement) {
+            editorHoverElement.classList.remove('osp-editor-hover');
+            editorHoverElement = null;
+        }
+    }
+
+    function onEditorOut(e) {
+        if (e.target.classList.contains('osp-editor-hover')) {
+            e.target.classList.remove('osp-editor-hover');
+        }
+    }
+
+    function onEditorClick(e) {
+        if (!isEditorMode) return;
+        if (e.target.closest('.osp-advanced-modal')) return;
+
+        e.preventDefault();
+        e.stopPropagation();
+
+        // Check if we clicked an existing highlight
+        if (e.target.classList.contains('osp-static-highlight') || e.target.classList.contains('osp-highlight-label')) {
+            const highlight = e.target.closest('.osp-static-highlight');
+            const data = highlightElementsMap.get(highlight);
+            if (data) {
+                showAdvancedModal(data.element, e.clientX, e.clientY, data.rule);
+                return;
+            }
+        }
+
+        // Otherwise, new element
+        const target = e.target;
+        showAdvancedModal(target, e.clientX, e.clientY);
+    }
+
+
+    // ===== ADVANCED MODAL =====
+    function showAdvancedModal(targetElement, x, y, existingRule = null) {
+        removeModal();
+
+        const isEditing = !!existingRule;
+        const selector = isEditing ? existingRule.selector : generateSelector(targetElement);
+        const defaultLabel = isEditing ? existingRule.label : '';
+        const defaultColor = isEditing ? existingRule.color : COLORS[0].value;
+        const defaultShape = isEditing ? existingRule.style : 'rectangle';
+
+        const modal = document.createElement('div');
+        modal.className = 'osp-advanced-modal';
+
+        // UI Generation (Keep mostly same as before, add Debug button)
+        const colorGridHtml = COLORS.map(c =>
+            `<div class="osp-color-option ${c.value === defaultColor ? 'selected' : ''}" 
+                  style="background-color: ${c.value}" 
+                  data-value="${c.value}" 
+                  title="${c.name}"></div>`
+        ).join('');
+
+        modal.innerHTML = `
+            <div class="osp-modal-header">
+                <div class="osp-modal-title">${isEditing ? 'Edit Rule' : 'New Tag'}</div>
+                <div style="display:flex; gap:8px;">
+                     <button class="osp-btn-secondary" id="osp-debug-btn" title="Inspect Element">🐛</button>
+                     <button class="osp-btn-secondary" id="osp-close-btn">✕</button>
+                </div>
+            </div>
+            <div class="osp-modal-body">
+                <div class="osp-form-group">
+                    <label class="osp-label">Label Text</label>
+                    <input type="text" class="osp-input" id="osp-label-input" placeholder="e.g. Upload Button" value="${defaultLabel}" autofocus>
+                </div>
+
+                <div class="osp-form-group">
+                    <label class="osp-label">Color</label>
+                    <div class="osp-color-grid">
+                        ${colorGridHtml}
+                    </div>
+                </div>
+
+                <div class="osp-form-group">
+                    <label class="osp-label">Shape</label>
+                    <div class="osp-shape-options">
+                        <button class="osp-shape-btn ${defaultShape === 'rectangle' ? 'selected' : ''}" data-value="rectangle">Box</button>
+                        <button class="osp-shape-btn ${defaultShape === 'circle' ? 'selected' : ''}" data-value="circle">Circle</button>
+                        <button class="osp-shape-btn ${defaultShape === 'underline' ? 'selected' : ''}" data-value="underline">Line</button>
+                    </div>
+                </div>
+
+                <div class="osp-form-group">
+                    <label class="osp-label">CSS Selector (Verified)</label>
+                    <input type="text" class="osp-input osp-code-input" id="osp-selector-input" value="${selector}">
+                </div>
+            </div>
+            <div class="osp-modal-footer">
+                ${isEditing ? '<button class="osp-btn osp-btn-danger" id="osp-delete-btn" title="Delete Rule">🗑 Delete</button>' : ''}
+                <button class="osp-btn osp-btn-secondary" id="osp-cancel-btn">Cancel</button>
+                <button class="osp-btn osp-btn-primary" id="osp-save-btn">Save Rule</button>
+            </div>
         `;
 
-        document.body.appendChild(highlightOverlay);
-        positionOverlay(element);
+        // Smart Positioning
+        const modalX = Math.min(x, window.innerWidth - 400);
+        const modalY = Math.min(y, window.innerHeight - 500);
+        modal.style.left = `${Math.max(10, modalX)}px`;
+        modal.style.top = `${Math.max(10, modalY)}px`;
 
-        window.addEventListener('scroll', onScroll, true);
-        window.addEventListener('resize', onResize);
+        document.body.appendChild(modal);
 
-        element.classList.add('osp-highlighted-element');
-        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        // Inputs
+        const labelInput = modal.querySelector('#osp-label-input');
+        const selectorInput = modal.querySelector('#osp-selector-input');
+        labelInput.focus();
 
-        element.addEventListener('click', onHighlightedElementClick);
-        element.addEventListener('focus', onHighlightedElementFocus);
+        // Color Click
+        modal.querySelectorAll('.osp-color-option').forEach(opt => {
+            opt.addEventListener('click', () => {
+                modal.querySelectorAll('.osp-color-option').forEach(o => o.classList.remove('selected'));
+                opt.classList.add('selected');
+            });
+        });
 
-        // Notify Python that highlight is now visible
-        console.log('[OSP] Highlight displayed successfully for:', selector);
-        sendToBackground('highlight_displayed', {
-            selector: selector,
-            label: label,
-            timestamp: Date.now()
+        // Shape Click
+        modal.querySelectorAll('.osp-shape-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                modal.querySelectorAll('.osp-shape-btn').forEach(b => b.classList.remove('selected'));
+                btn.classList.add('selected');
+            });
+        });
+
+        // ACTIONS
+        modal.querySelector('#osp-close-btn').onclick = removeModal;
+        modal.querySelector('#osp-cancel-btn').onclick = removeModal;
+
+        modal.querySelector('#osp-debug-btn').onclick = () => {
+            inspectElement(targetElement, existingRule);
+        };
+
+        if (isEditing) {
+            modal.querySelector('#osp-delete-btn').onclick = () => {
+                if (confirm('Delete this rule permanently?')) {
+                    deleteUserRule(existingRule.id);
+                    removeModal();
+                    removeEditorHover();
+                }
+            };
+        }
+
+        modal.querySelector('#osp-save-btn').onclick = () => {
+            const label = labelInput.value.trim();
+            if (!label) return;
+
+            const color = modal.querySelector('.osp-color-option.selected').dataset.value;
+            const shape = modal.querySelector('.osp-shape-btn.selected').dataset.value;
+            const finalSelector = selectorInput.value.trim();
+
+            const rule = {
+                id: isEditing ? existingRule.id : null,
+                domain: window.location.hostname,
+                selector: finalSelector,
+                label: label,
+                color: color,
+                style: shape
+            };
+
+            saveUserRule(rule);
+            removeModal();
+            removeEditorHover();
+        };
+
+        modal.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') removeModal();
+            if (e.key === 'Enter') modal.querySelector('#osp-save-btn').click();
         });
     }
 
-    // Try alternative selectors when primary fails
-    async function tryAlternativeSelectors(originalSelector, label) {
-        const labelLower = label.toLowerCase();
-        let alternatives = [];
-
-        // Build alternatives based on what we're looking for
-        if (labelLower.includes('title')) {
-            alternatives = [
-                "[placeholder='Title']",
-                "input[placeholder*='title' i]",
-                "input[placeholder*='Title']",
-                "[data-placeholder='Title']",
-                ".title-input",
-                "input[name='title']",
-                "[contenteditable='true']:first-of-type",
-                "input[type='text']:first-of-type"
-            ];
-        } else if (labelLower.includes('body') || labelLower.includes('write') || labelLower.includes('content')) {
-            alternatives = [
-                "[placeholder*='Write' i]",
-                "[data-placeholder*='Write' i]",
-                "p[data-placeholder*='Write' i]",
-                "p[data-placeholder*='something']",
-                "textarea",
-                ".body-input",
-                "[contenteditable='true']",
-                "div[role='textbox']",
-                ".is-empty",
-                "p[contenteditable='true']"
-            ];
-        } else if (labelLower.includes('post') || labelLower.includes('submit')) {
-            alternatives = [
-                "button[type='submit']",
-                ".post-button",
-                "button:contains('Post')",
-                "[aria-label='Post']",
-                "button.primary"
-            ];
-        }
-
-        // Also try splitting comma-separated selectors and testing individually
-        if (originalSelector.includes(',')) {
-            const parts = originalSelector.split(',').map(s => s.trim());
-            alternatives = [...parts, ...alternatives];
-        }
-
-        // Try each alternative
-        for (const alt of alternatives) {
-            try {
-                const el = document.querySelector(alt);
-                if (el) {
-                    console.log('[OSP] Found element with alternative selector:', alt);
-                    return el;
-                }
-            } catch (e) {
-                // Invalid selector, skip
-            }
-        }
-
-        // Last resort: wait a bit and try alternatives again (page might still be loading)
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        for (const alt of alternatives) {
-            try {
-                const el = document.querySelector(alt);
-                if (el) {
-                    console.log('[OSP] Found element with alternative selector (after delay):', alt);
-                    return el;
-                }
-            } catch (e) {
-                // Invalid selector, skip
-            }
-        }
-
-        return null;
+    function removeModal() {
+        const modal = document.querySelector('.osp-advanced-modal');
+        if (modal) modal.remove();
     }
 
-    function waitForElement(selector, timeout = 5000) {
-        return new Promise((resolve, reject) => {
-            if (document.querySelector(selector)) {
-                return resolve(document.querySelector(selector));
-            }
 
-            const observer = new MutationObserver(mutations => {
-                if (document.querySelector(selector)) {
-                    observer.disconnect();
-                    resolve(document.querySelector(selector));
-                }
+    // ===== LOOP =====
+    function observeDomChanges() {
+        // High frequency DOM observation for SPA stability
+        const observer = new MutationObserver(() => {
+            requestAnimationFrame(() => {
+                if (!isEditorMode) applyAllHighlights();
             });
-
-            observer.observe(document.body, {
-                childList: true,
-                subtree: true
-            });
-
-            setTimeout(() => {
-                observer.disconnect();
-                reject(new Error("Timeout"));
-            }, timeout);
         });
-    }
+        observer.observe(document.body, { childList: true, subtree: true });
 
-    let isTicking = false;
-    function onScroll() {
-        if (!isTicking) {
-            window.requestAnimationFrame(() => {
-                updateOverlayPosition();
-                isTicking = false;
-            });
-            isTicking = true;
-        }
-    }
-
-    function onResize() {
-        onScroll();
-    }
-
-    function updateOverlayPosition() {
-        if (highlightedElement && highlightOverlay) positionOverlay(highlightedElement);
-    }
-
-    function positionOverlay(element) {
-        const rect = element.getBoundingClientRect();
-        if (!highlightOverlay) return;
-
-        // Position at the top-right corner of the element
-        highlightOverlay.style.left = `${rect.right + window.scrollX}px`;
-        highlightOverlay.style.top = `${rect.top + window.scrollY}px`;
-        highlightOverlay.style.display = 'block';
-    }
-
-    function clearHighlights(reason = 'unknown') {
-        const hadHighlight = highlightOverlay !== null || highlightedElement !== null;
-        let selector = 'none';
-
-        if (highlightOverlay) {
-            highlightOverlay.remove();
-            highlightOverlay = null;
-        }
-
-        if (highlightedElement) {
-            try {
-                selector = getSelector(highlightedElement);
-            } catch (e) { }
-            highlightedElement.classList.remove('osp-highlighted-element');
-            highlightedElement.removeEventListener('click', onHighlightedElementClick);
-            highlightedElement.removeEventListener('focus', onHighlightedElementFocus);
-            highlightedElement = null;
-        }
-
-        const label = document.getElementById('osp-highlight-label');
-        if (label) label.remove();
-
-        // Log and notify when a highlight was actually removed
-        if (hadHighlight) {
-            console.log('[OSP] Highlight CLEARED - Reason:', reason, '- Selector was:', selector);
-            sendToBackground('highlight_cleared', {
-                reason: reason,
-                selector: selector,
-                timestamp: Date.now()
-            });
-        }
-    }
-
-    // Instruction Banner Logic
-    function showInstruction(text, icon = '💡') {
-        console.log('[OSP] Showing instruction:', text);
-        let banner = document.getElementById('osp-instruction-banner');
-        if (!banner) {
-            banner = document.createElement('div');
-            banner.id = 'osp-instruction-banner';
-            banner.className = 'osp-instruction-banner';
-            banner.innerHTML = `
-                <span class="osp-instruction-icon">${icon}</span>
-                <div class="osp-instruction-text"></div>
-            `;
-            document.body.appendChild(banner);
-        }
-
-        const textEl = banner.querySelector('.osp-instruction-text');
-        textEl.textContent = text;
-        banner.querySelector('.osp-instruction-icon').textContent = icon;
-
-        // Animate in
-        banner.classList.add('visible');
-    }
-
-    function hideInstruction() {
-        console.log('[OSP] Hiding instruction banner');
-        const banner = document.getElementById('osp-instruction-banner');
-        if (banner) {
-            banner.classList.remove('visible');
-        }
-    }
-
-    async function suggestField(type) {
-        console.log('[OSP] Auto-suggesting field highlight for:', type);
-        let label = "ACTION NEEDED";
-        if (type === 'title') label = "PASTE TITLE HERE";
-        if (type === 'body') label = "PASTE BODY HERE";
-        if (type === 'post') label = "CLICK TO POST";
-
-        // Use our search engine to find the element
-        const element = await tryAlternativeSelectors('', type);
-        if (element) {
-            const selector = getSelector(element);
-            highlightElement(selector, label);
-            showInstruction(`Please ${label.toLowerCase()}`, '👆');
-        }
-    }
-
-    function onHighlightedElementClick(event) {
-        const selector = getSelector(event.target);
-        console.log('[OSP] Highlighted element CLICKED:', event.target.tagName, selector);
-        clearHighlights('element_clicked'); // Auto-clear overlay on interaction
-
-        // Send highlight_clicked - this is what Python uses to advance playback
-        sendToBackground('highlight_clicked', {
-            selector: selector,
-            element_type: event.target.tagName.toLowerCase(),
-            element_id: event.target.id,
-            timestamp: Date.now()
+        window.addEventListener('resize', () => {
+            if (!isEditorMode) applyAllHighlights();
         });
 
-        // Also send element_clicked for backwards compatibility
-        sendToBackground('element_clicked', {
-            selector: selector,
-            element_type: event.target.tagName.toLowerCase(),
-            element_id: event.target.id,
-            timestamp: Date.now()
-        });
-    }
-
-    function onHighlightedElementFocus(event) {
-        sendToBackground('element_focused', {
-            selector: getSelector(event.target),
-            element_type: event.target.tagName.toLowerCase()
-        });
-
-        const placeholder = event.target.getAttribute('data-placeholder') ||
-            event.target.getAttribute('placeholder') || '';
-
-        if (placeholder.toLowerCase().includes('title')) {
-            sendToBackground('request_copy', { field: 'title' });
-        } else if (placeholder.toLowerCase().includes('write') ||
-            placeholder.toLowerCase().includes('body')) {
-            sendToBackground('request_copy', { field: 'body' });
-        }
-    }
-
-    document.addEventListener('paste', (event) => {
-        const target = event.target;
-        if (target.matches('input, textarea, [contenteditable]')) {
-            setTimeout(() => {
-                const content = target.value || target.textContent || '';
-                sendToBackground('paste_detected', {
-                    selector: getSelector(target),
-                    content_length: content.length,
-                    element_type: target.tagName.toLowerCase()
-                });
-            }, 100);
-        }
-    });
-
-    function getSelector(element) {
-        // 1. ID
-        if (element.id) return '#' + CSS.escape(element.id);
-
-        // 2. Important Attributes
-        const attributes = ['name', 'placeholder', 'aria-label', 'data-testid', 'data-id', 'role', 'data-placeholder'];
-        for (const attr of attributes) {
-            if (element.hasAttribute(attr)) {
-                const val = element.getAttribute(attr);
-                if (val && val.length < 50) {
-                    // Use double quotes and minimal escaping for attribute values to avoid over-escaping spaces
-                    const safeVal = val.replace(/'/g, "\\'");
-                    const selector = `[${attr}="${safeVal}"]`;
-                    if (document.querySelectorAll(selector).length === 1) return selector;
-                    const tagSelector = `${element.tagName.toLowerCase()}${selector}`;
-                    if (document.querySelectorAll(tagSelector).length === 1) return tagSelector;
+        window.addEventListener('scroll', () => {
+            // Update highlight positions without full DOM scan
+            document.querySelectorAll('.osp-static-highlight').forEach(highlight => {
+                const data = highlightElementsMap.get(highlight);
+                if (data && data.element && isVisible(data.element)) {
+                    updateHighlightPosition(highlight, data.element, data.rule.labelPosition);
+                } else {
+                    highlight.style.display = 'none'; // Temporarily hide if lost
                 }
-            }
-        }
-
-        // 3. Classes (careful of generic Tailwind/Utility/State classes)
-        const IGNORED_CLASSES = ['is-empty', 'is-focused', 'is-editor-empty', 'ProseMirror', 'osp-highlighted-element', 'osp-highlight-overlay'];
-        if (element.className && typeof element.className === 'string') {
-            const classes = element.className.trim().split(/\s+/)
-                .filter(cls => {
-                    if (!cls) return false;
-                    // Ignore transient state classes
-                    if (IGNORED_CLASSES.some(ignored => cls.includes(ignored))) return false;
-                    // Ignore hover states
-                    if (cls.includes('hover:')) return false;
-                    // Ignore styled-component hashes (common patterns: styled__, -sc-)
-                    if (cls.startsWith('styled__') || cls.includes('-sc-')) return false;
-                    return true;
-                });
-
-            // Try single classes first (not generic ones)
-            for (const cls of classes) {
-                // Skip generic one-letter or two-letter classes (common in some frameworks)
-                if (cls.length <= 2) continue;
-
-                const selector = '.' + CSS.escape(cls);
-                if (document.querySelectorAll(selector).length === 1) return selector;
-
-                // Try tag + class
-                const tagSelector = element.tagName.toLowerCase() + selector;
-                if (document.querySelectorAll(tagSelector).length === 1) return tagSelector;
-            }
-
-            // Try combinations of 2 classes
-            if (classes.length >= 2) {
-                const selector = '.' + CSS.escape(classes[0]) + '.' + CSS.escape(classes[1]);
-                if (document.querySelectorAll(selector).length === 1) return selector;
-            }
-        }
-
-        // 4. CSS Path (Recursive Parent)
-        try {
-            if (!element || !element.parentNode) return element ? element.tagName.toLowerCase() : '';
-            return getCssPath(element);
-        } catch (e) {
-            console.warn('[OSP] getSelector crashed:', e);
-            return element ? element.tagName.toLowerCase() : '';
-        }
-    }
-
-    function getCssPath(el) {
-        if (!el || !(el instanceof Element)) return '';
-        const path = [];
-        const IGNORED_CLASSES = ['is-empty', 'is-focused', 'is-editor-empty', 'ProseMirror', 'osp-highlighted-element', 'osp-highlight-overlay'];
-
-        while (el && el.nodeType === Node.ELEMENT_NODE) {
-            let selector = el.nodeName.toLowerCase();
-            if (el.id) {
-                selector += '#' + CSS.escape(el.id);
-                path.unshift(selector);
-                break;
-            } else {
-                // Add stable classes to the selector segment
-                if (el.className && typeof el.className === 'string') {
-                    const classes = el.className.trim().split(/\s+/)
-                        .filter(cls => {
-                            if (!cls || cls.length <= 2) return false;
-                            if (IGNORED_CLASSES.some(ignored => cls.includes(ignored))) return false;
-                            if (cls.includes('hover:')) return false;
-                            if (cls.startsWith('styled__') || cls.includes('-sc-')) return false;
-                            return true;
-                        });
-                    if (classes.length > 0) {
-                        selector += '.' + classes.map(cls => CSS.escape(cls)).join('.');
-                    }
-                }
-
-                // Only add nth-of-type if the selector isn't already unique among siblings
-                let sib = el, nth = 1;
-                while (sib = sib.previousElementSibling) {
-                    if (sib.nodeName.toLowerCase() == el.nodeName.toLowerCase())
-                        nth++;
-                }
-                if (nth != 1)
-                    selector += `:nth-of-type(${nth})`;
-            }
-            path.unshift(selector);
-            el = el.parentNode;
-        }
-        return path.join(" > ");
-    }
-
-    function sendToBackground(type, payload) {
-        try {
-            chrome.runtime.sendMessage({
-                action: 'OSP_SEND',
-                type: type,
-                payload: payload
             });
-        } catch (e) {
-            console.log('Stats connection lost:', e);
-        }
+        }, true);
     }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
+    }
+
 })();
