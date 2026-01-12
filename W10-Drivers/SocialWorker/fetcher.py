@@ -58,7 +58,7 @@ def is_allowed_url(url: str) -> bool:
     except Exception:
         return False
 
-def safe_request(method: str, url: str, **kwargs) -> requests.Response:
+def safe_request(method: str, url: str, headers=None, json=None, timeout=30, **kwargs) -> requests.Response:
     """
     Make HTTP request ONLY if URL is in allowed domains.
     Raises SecurityError if domain is not allowed.
@@ -66,7 +66,7 @@ def safe_request(method: str, url: str, **kwargs) -> requests.Response:
     if not is_allowed_url(url):
         raise SecurityError(f"BLOCKED: Domain not in allowlist: {url}")
     
-    return requests.request(method, url, **kwargs)
+    return requests.request(method, url, headers=headers, json=json, timeout=timeout, **kwargs)
 
 class SecurityError(Exception):
     """Raised when attempting to access a non-allowed domain."""
@@ -134,7 +134,19 @@ class QueueFetcher:
         try:
             response = safe_request('GET', url, headers=self._get_headers(), timeout=30)
             response.raise_for_status()
-            return response.json()
+            posts = response.json()
+            
+            # DIAGNOSTIC LOGGING
+            for post in posts:
+                logger.info(f"[FETCHER] API returned post:")
+                logger.info(f"[FETCHER]   id = {post.get('id')}")
+                logger.info(f"[FETCHER]   All keys = {list(post.keys())}")
+                # Log full post but truncate media/body if too long to keep logs cleaner
+                safe_post = post.copy()
+                if 'media' in safe_post: safe_post['media'] = f"[{len(safe_post['media'])} items...]"
+                logger.info(f"[FETCHER]   Full post (summary) = {json.dumps(safe_post)}")
+                
+            return posts
         except SecurityError:
             raise
         except Exception as e:
@@ -265,14 +277,20 @@ class QueueFetcher:
 
                 # Notify API
                 logger.info(f"Syncing completion for job {job_dir.name}...")
-                url = f"{DASHBOARD_URL}/api/queue/gui/{post_id}/complete"
-                response = safe_request('POST', url, headers=self._get_headers(), timeout=30)
+                url = f"{DASHBOARD_URL}/api/queue/gui/complete"
+                payload = {
+                    'id': post_id,
+                    'status': 'success',
+                    'completed_at': datetime.now().isoformat()
+                }
                 
-                if response.status_code in [200, 201, 204]:
+                response = safe_request('POST', url, headers=self._get_headers(), json=payload, timeout=30)
+                
+                if response.ok:
                     self._archive_job(job_dir, 'completed')
-                    logger.info(f"Synced & archived: {job_dir.name}")
+                    logger.info(f"[SYNC] Successfully synced job {post_id} as complete")
                 else:
-                    logger.error(f"Failed to sync completion for {post_id}: {response.status_code} {response.text}")
+                    logger.error(f"[SYNC] Failed to sync completion for {post_id}: {response.status_code} - {response.text}")
 
             except Exception as e:
                 logger.error(f"Error processing completed job {job_dir.name}: {e}")
@@ -297,6 +315,10 @@ class QueueFetcher:
                 
                 post_id = data.get('id')
                 
+                # DIAGNOSTIC LOGGING
+                logger.info(f"[SYNC] Processing Job folder: {job_dir.name}")
+                logger.info(f"[SYNC] job.json 'id' field: {post_id}")
+                
                 # Read Reason
                 reason = "Unknown failure"
                 reason_file = job_dir / 'failure_reason.txt'
@@ -306,16 +328,21 @@ class QueueFetcher:
 
                 # Notify API
                 logger.info(f"Syncing failure for job {job_dir.name}...")
-                url = f"{DASHBOARD_URL}/api/queue/gui/{post_id}/failed"
-                payload = {'reason': reason}
+                url = f"{DASHBOARD_URL}/api/queue/gui/failed"
+                payload = {
+                    'id': post_id,
+                    'status': 'failed',
+                    'error': reason,
+                    'failed_at': datetime.now().isoformat()
+                }
                 
                 response = safe_request('POST', url, headers=self._get_headers(), json=payload, timeout=30)
                 
-                if response.status_code in [200, 201, 204]:
+                if response.ok:
                     self._archive_job(job_dir, 'failed')
-                    logger.info(f"Synced & archived: {job_dir.name}")
+                    logger.info(f"[SYNC] Successfully synced job {post_id} as failed")
                 else:
-                    logger.error(f"Failed to sync failure for {post_id}: {response.status_code}")
+                    logger.error(f"[SYNC] Failed to sync failure for {post_id}: {response.status_code} - {response.text}")
 
             except Exception as e:
                 logger.error(f"Error processing failed job {job_dir.name}: {e}")

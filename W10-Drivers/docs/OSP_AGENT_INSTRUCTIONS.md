@@ -33,10 +33,11 @@ Start-Process python -ArgumentList "osp_gui.py" -WorkingDirectory "C:\ProxMox-So
 *   **Docking**: The window automatically docks to the **Right 15%** of the screen.
 
 ## 5. Interaction (Chrome)
-The OSP GUI works in tandem with the **Element Blocker Extension** (which contains the merged OSP WebSocket Client).
+The OSP GUI works in tandem with the **OSP Companion Extension**.
 
 1.  **Launch OSP**: Run the command above.
-2.  **Open Chrome**: Ensure the extension is loaded.
+2.  **Open Chrome**: Ensure the extension is loaded from:
+    `C:\ProxMox-Social\W10-Drivers\extensions\osp-companion-extension`
 3.  **Status Check**: The top-left label in the OSP GUI should turn **Green ("● Connected")**.
 4.  **Flow**:
     *   The Agent should execute clicks on the **Manual Actions** buttons in the OSP GUI (via VNC/Mouse).
