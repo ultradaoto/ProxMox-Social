@@ -85,7 +85,7 @@ class Fetcher:
         """Initialize HTTP session."""
         headers = {}
         if self.api_key:
-            headers['Authorization'] = f"Bearer {self.api_key}"
+            headers['X-API-Key'] = self.api_key
         
         self.session = aiohttp.ClientSession(
             timeout=self.timeout,
@@ -108,7 +108,7 @@ class Fetcher:
         """
         try:
             async with self.session.get(
-                f"{self.api_base_url}/gui_post_queue/pending"
+                f"{self.api_base_url}/queue/gui/pending"
             ) as response:
                 
                 if response.status == 200:
@@ -138,7 +138,7 @@ class Fetcher:
         """
         try:
             async with self.session.get(
-                f"{self.api_base_url}/gui_post_queue/pending"
+                f"{self.api_base_url}/queue/gui/pending"
             ) as response:
                 
                 if response.status == 200:
@@ -162,7 +162,7 @@ class Fetcher:
         """
         try:
             async with self.session.post(
-                f"{self.api_base_url}/gui_post_queue/{post_id}/processing",
+                f"{self.api_base_url}/queue/gui/{post_id}/processing",
                 json={"status": "processing"}
             ) as response:
                 return response.status == 200

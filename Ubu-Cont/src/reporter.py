@@ -46,7 +46,7 @@ class Reporter:
         """Initialize HTTP session."""
         headers = {}
         if self.api_key:
-            headers['Authorization'] = f"Bearer {self.api_key}"
+            headers['X-API-Key'] = self.api_key
         
         self.session = aiohttp.ClientSession(
             timeout=self.timeout,
@@ -100,7 +100,7 @@ class Reporter:
         
         try:
             async with self.session.post(
-                f"{self.api_base_url}/gui_post_queue/{post_id}/{endpoint}",
+                f"{self.api_base_url}/queue/gui/{endpoint}",
                 json=payload
             ) as response:
                 
