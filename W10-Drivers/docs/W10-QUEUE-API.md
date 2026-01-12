@@ -49,6 +49,22 @@ shutil.move(str(job.path), str(dest)) # Moves C:\PostQueue\pending\job_x -> C:\P
 
 The `fetcher.py` script runs in the background (every 5 minutes by default). It finds the job in `C:\PostQueue\completed` and sends the success signal.
 
+## 4. OSP "Success" Button Workflow (Decoupled)
+
+The "Success" button in the OSP GUI does **not** make an API call immediately. This is a decoupled architecture designed for stability.
+
+1.  **User Action**: User clicks "MARK SUCCESS" in `osp_gui.py`.
+2.  **Local Move**: The GUI moves the job folder from `C:\PostQueue\pending\job_ID` to `C:\PostQueue\completed\job_ID`.
+    *   *Note: This checks `job.json` to ensure the ID is valid.*
+3.  **Polling Delay**: The background service `fetcher.py` checks the `completed` folder every **5 minutes** (or configured interval).
+4.  **Sync**: When `fetcher.py` sees the folder in `completed`:
+    *   It reads the **original ID** from `job.json`.
+    *   It sends `POST /api/queue/gui/complete`.
+    *   On success (200 OK), it moves the folder to `archived/completed`.
+    *   On failure (404 Not Found), it moves the folder to `archived/completed` to prevent infinite retries (assuming the job was deleted on server).
+
+**Takeaway:** There is a natural delay between clicking "Success" and the website updating. This is normal behavior.
+
 **This is the exact code responsible for the API call:**
 
 ```python

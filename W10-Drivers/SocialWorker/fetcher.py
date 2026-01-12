@@ -289,6 +289,9 @@ class QueueFetcher:
                 if response.ok:
                     self._archive_job(job_dir, 'completed')
                     logger.info(f"[SYNC] Successfully synced job {post_id} as complete")
+                elif response.status_code == 404:
+                    self._archive_job(job_dir, 'completed')
+                    logger.warning(f"[SYNC] Job {post_id} not found on server (404). Archiving local copy to stop retries.")
                 else:
                     logger.error(f"[SYNC] Failed to sync completion for {post_id}: {response.status_code} - {response.text}")
 
@@ -341,6 +344,9 @@ class QueueFetcher:
                 if response.ok:
                     self._archive_job(job_dir, 'failed')
                     logger.info(f"[SYNC] Successfully synced job {post_id} as failed")
+                elif response.status_code == 404:
+                    self._archive_job(job_dir, 'failed')
+                    logger.warning(f"[SYNC] Job {post_id} not found on server (404). Archiving local copy to stop retries.")
                 else:
                     logger.error(f"[SYNC] Failed to sync failure for {post_id}: {response.status_code} - {response.text}")
 
