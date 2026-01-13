@@ -46,11 +46,20 @@ class PendingPost:
     def from_api_response(cls, data: dict) -> "PendingPost":
         """Create PendingPost from API response."""
         platform_str = data.get("platform", "skool").lower()
+
+        # Handle platform string variations (e.g., "instagram_vagus" -> "instagram")
+        # Extract base platform name before underscore
+        base_platform = platform_str.split("_")[0]
+
         try:
-            platform = Platform(platform_str)
+            platform = Platform(base_platform)
         except ValueError:
-            logger.warning(f"Unknown platform '{platform_str}', defaulting to skool")
-            platform = Platform.SKOOL
+            # Try original string if base didn't work
+            try:
+                platform = Platform(platform_str)
+            except ValueError:
+                logger.warning(f"Unknown platform '{platform_str}', defaulting to skool")
+                platform = Platform.SKOOL
         
         return cls(
             id=data.get("id", ""),

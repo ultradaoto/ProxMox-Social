@@ -233,9 +233,15 @@ class BrainOrchestrator:
             
             # Get workflow
             workflow = self.workflows.get(post.platform)
-            
+
             if not workflow:
-                logger.error(f"No workflow for platform: {post.platform.value}")
+                # Debug logging
+                logger.error(f"No workflow for platform: {post.platform}")
+                logger.error(f"Platform value: {post.platform.value}")
+                logger.error(f"Platform type: {type(post.platform)}")
+                logger.error(f"Available workflows: {list(self.workflows.keys())}")
+                logger.error(f"Available workflow values: {[p.value for p in self.workflows.keys()]}")
+
                 await self.reporter.report_failure(
                     post.id,
                     f"Unsupported platform: {post.platform.value}",

@@ -67,52 +67,22 @@ class Reporter:
         details: Optional[Dict[str, Any]] = None
     ) -> bool:
         """
-        Report status update for a post.
-        
-        Args:
-            post_id: Post ID
-            status: New status
-            details: Optional additional details
-            
-        Returns:
-            True if report was accepted
+        DEPRECATED: Use report_success(), report_failure(), report_processing() instead.
+
+        This method is kept for backwards compatibility but routes to the correct methods.
         """
-        endpoint_map = {
-            PostStatus.PROCESSING: "processing",
-            PostStatus.POSTING: "posting",
-            PostStatus.SUCCESS: "complete",
-            PostStatus.FAILED: "failed"
-        }
-        
-        endpoint = endpoint_map.get(status)
-        if not endpoint:
+        if status == PostStatus.SUCCESS:
+            return await self.report_success(post_id)
+        elif status == PostStatus.FAILED:
+            error = details.get("error", "Unknown error") if details else "Unknown error"
+            step = details.get("failed_step") if details else None
+            return await self.report_failure(post_id, error, step=step)
+        elif status == PostStatus.PROCESSING:
+            return await self.report_processing(post_id)
+        elif status == PostStatus.POSTING:
+            return await self.report_posting(post_id)
+        else:
             logger.error(f"Unknown status: {status}")
-            return False
-        
-        payload = {
-            "status": status.value,
-            "timestamp": datetime.now().isoformat(),
-            "processor": "ubuntu-brain"
-        }
-        
-        if details:
-            payload.update(details)
-        
-        try:
-            async with self.session.post(
-                f"{self.api_base_url}/queue/gui/{endpoint}",
-                json=payload
-            ) as response:
-                
-                success = response.status == 200
-                if success:
-                    logger.info(f"Reported {status.value} for post {post_id}")
-                else:
-                    logger.warning(f"Report failed: {response.status}")
-                return success
-                
-        except Exception as e:
-            logger.error(f"Failed to report status: {e}")
             return False
     
     async def report_success(
@@ -223,9 +193,51 @@ class Reporter:
             return False
     
     async def report_processing(self, post_id: str) -> bool:
-        """Mark post as being processed."""
-        return await self.report_status(post_id, PostStatus.PROCESSING)
-    
+        """
+        Mark post as being processed.
+
+        Per API spec, this may use a status update endpoint.
+        """
+        payload = {"id": post_id, "status": "processing"}
+
+        try:
+            async with self.session.post(
+                f"{self.api_base_url}/queue/gui/processing",
+                json=payload
+            ) as response:
+                success = response.status == 200
+                if success:
+                    logger.info(f"⏳ Reported PROCESSING for post {post_id}")
+                else:
+                    error_text = await response.text()
+                    logger.warning(f"Report processing failed: {response.status} - {error_text}")
+                return success
+
+        except Exception as e:
+            logger.error(f"Failed to report processing: {e}")
+            return False
+
     async def report_posting(self, post_id: str) -> bool:
-        """Mark post as in the posting phase."""
-        return await self.report_status(post_id, PostStatus.POSTING)
+        """
+        Mark post as in the posting phase.
+
+        Per API spec, this may use a status update endpoint.
+        """
+        payload = {"id": post_id, "status": "posting"}
+
+        try:
+            async with self.session.post(
+                f"{self.api_base_url}/queue/gui/posting",
+                json=payload
+            ) as response:
+                success = response.status == 200
+                if success:
+                    logger.info(f"📤 Reported POSTING for post {post_id}")
+                else:
+                    error_text = await response.text()
+                    logger.warning(f"Report posting failed: {response.status} - {error_text}")
+                return success
+
+        except Exception as e:
+            logger.error(f"Failed to report posting: {e}")
+            return False
