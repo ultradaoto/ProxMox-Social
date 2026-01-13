@@ -47,29 +47,43 @@ class PendingPost:
         """Create PendingPost from API response."""
         platform_str = data.get("platform", "skool").lower()
 
-        # Handle platform string variations (e.g., "instagram_vagus" -> "instagram")
-        # Extract base platform name before underscore
-        base_platform = platform_str.split("_")[0]
-
-        try:
-            platform = Platform(base_platform)
-        except ValueError:
-            # Try original string if base didn't work
-            try:
-                platform = Platform(platform_str)
-            except ValueError:
-                logger.warning(f"Unknown platform '{platform_str}', defaulting to skool")
-                platform = Platform.SKOOL
+        # Map platform variants to base platform
+        # e.g., "skool_vagus", "skool_desci" -> SKOOL
+        if platform_str.startswith("skool"):
+            platform = Platform.SKOOL
+        elif platform_str.startswith("instagram"):
+            platform = Platform.INSTAGRAM
+        elif platform_str.startswith("facebook"):
+            platform = Platform.FACEBOOK
+        elif platform_str.startswith("tiktok"):
+            platform = Platform.TIKTOK
+        else:
+            logger.warning(f"Unknown platform '{platform_str}', defaulting to skool")
+            platform = Platform.SKOOL
+        
+        # Get URL from platform_url or options
+        url = data.get("platform_url", "")
+        if not url:
+            options = data.get("options", {})
+            url = options.get("platform_url", options.get("target_url", ""))
+        
+        # Body is in 'caption' field
+        body = data.get("caption", data.get("body", ""))
+        
+        # Email toggle is 'email_members'
+        send_email = data.get("email_members", data.get("send_email", False))
+        
+        logger.info(f"Parsed post: platform={platform.value}, url={url[:50]}...")
         
         return cls(
             id=data.get("id", ""),
             platform=platform,
-            url=data.get("url", ""),
+            url=url,
             title=data.get("title", ""),
-            body=data.get("body", ""),
+            body=body,
             image_path=data.get("image_path"),
             image_base64=data.get("image_base64"),
-            send_email=data.get("send_email", False),
+            send_email=send_email,
             hashtags=data.get("hashtags", []),
             metadata=data.get("metadata", {})
         )
