@@ -20,9 +20,9 @@ class VNCCapture:
     
     def __init__(
         self, 
-        host: str = "192.168.100.20", 
+        host: str = "192.168.100.101", 
         port: int = 5900,
-        password: Optional[str] = None,
+        password: Optional[str] = "Pa$$word",
         display: int = 0
     ):
         """

@@ -1,30 +1,13 @@
 """
 Skool Workflow - Complete posting workflow for Skool.com
 
-This workflow handles posting to Skool community platform.
-It follows the exact 16-step sequence described in the brain specification.
-
-Steps:
-1. Click OPEN URL on OSP
-2. Wait for Skool page to load
-3. Click "Start a post" on Skool
-4. Wait for post dialog to appear
-5. Click COPY TITLE on OSP
-6. Find title field and paste
-7. Click COPY BODY on OSP
-8. Find body field and paste
-9. Click COPY IMAGE on OSP
-10. Find image area and paste
-11. Check if email toggle is needed
-12. Toggle email if indicated
-13. Click POST on OSP
-14. Click actual Post button on Skool
-15. Verify success confirmation
-16. Click SUCCESS or FAILED on OSP
+Uses the WORKING VisionController and InputController from test_osp_click.py.
+These are SYNC controllers that handle their own screenshot capture internally.
 """
 
 import asyncio
-from typing import List, Optional
+import time
+from typing import List, Optional, Tuple
 
 from src.workflows.async_base_workflow import AsyncBaseWorkflow, StepResult, StepStatus
 from src.utils.logger import get_logger
@@ -33,7 +16,7 @@ logger = get_logger(__name__)
 
 
 class SkoolWorkflow(AsyncBaseWorkflow):
-    """Workflow for posting to Skool.com"""
+    """Workflow for posting to Skool.com using working sync controllers."""
     
     @property
     def platform_name(self) -> str:
@@ -42,167 +25,180 @@ class SkoolWorkflow(AsyncBaseWorkflow):
     @property
     def steps(self) -> List[str]:
         return [
-            "click_osp_open_url",           # Step 1: Click OPEN URL on OSP
-            "wait_for_skool_page",          # Step 2: Wait for Skool to load
-            "click_start_post",             # Step 3: Click "Start a post" on Skool
-            "wait_for_post_dialog",         # Step 4: Wait for post dialog
-            "click_osp_copy_title",         # Step 5: Click COPY TITLE on OSP
-            "paste_title",                  # Step 6: Find title field and paste
-            "click_osp_copy_body",          # Step 7: Click COPY BODY on OSP
-            "paste_body",                   # Step 8: Find body field and paste
-            "click_osp_copy_image",         # Step 9: Click COPY IMAGE on OSP
-            "paste_image",                  # Step 10: Find image area and paste
-            "check_email_toggle",           # Step 11: Check if email toggle needed
-            "toggle_email_if_needed",       # Step 12: Toggle email if indicated
-            "click_osp_post",               # Step 13: Click POST on OSP
-            "click_skool_post_button",      # Step 14: Click actual Post button on Skool
-            "verify_post_success",          # Step 15: Verify green confirmation
-            "click_success_or_fail"         # Step 16: Click SUCCESS or FAILED on OSP
+            "click_osp_open_url",
+            "wait_for_skool_page",
+            "click_start_post",
+            "wait_for_post_dialog",
+            "click_osp_copy_title",
+            "paste_title",
+            "click_osp_copy_body",
+            "paste_body",
+            "click_osp_copy_image",
+            "paste_image",
+            "check_email_toggle",
+            "toggle_email_if_needed",
+            "click_osp_post",
+            "click_skool_post_button",
+            "verify_post_success",
+            "click_success_or_fail"
         ]
     
+    async def _find_and_click(self, description: str, pre_delay: float = 1.0) -> Optional[Tuple[int, int]]:
+        """
+        Find element using VisionController and click it.
+        VisionController.find_element() captures its own screenshot internally.
+        
+        Args:
+            description: What to find
+            pre_delay: Seconds to wait before capturing screenshot (let screen settle)
+        
+        Returns (x, y) tuple or None if not found.
+        """
+        # Wait for screen to settle before capturing
+        await asyncio.sleep(pre_delay)
+        
+        try:
+            coords = await asyncio.to_thread(
+                self.vision.find_element,
+                description
+            )
+            x, y = coords
+            logger.info(f"Found '{description[:50]}...' at ({x}, {y})")
+            
+            await asyncio.to_thread(self.input.move_to, x, y)
+            await asyncio.sleep(0.5)
+            await asyncio.to_thread(self.input.click, 'left')
+            logger.info(f"Clicked at ({x}, {y})")
+            
+            # Wait after click for UI to respond
+            await asyncio.sleep(0.5)
+            
+            return (x, y)
+        except Exception as e:
+            logger.warning(f"Failed to find/click '{description[:50]}...': {e}")
+            return None
+    
+    async def _find_element(self, description: str) -> Optional[Tuple[int, int]]:
+        """Find element without clicking. Returns (x, y) or None."""
+        try:
+            coords = await asyncio.to_thread(
+                self.vision.find_element,
+                description
+            )
+            x, y = coords
+            logger.info(f"Found '{description[:50]}...' at ({x}, {y})")
+            return (x, y)
+        except Exception as e:
+            logger.warning(f"Failed to find '{description[:50]}...': {e}")
+            return None
+    
+    async def _analyze_screen(self, prompt: str) -> str:
+        """Ask VisionController to analyze current screen."""
+        try:
+            result = await asyncio.to_thread(
+                self.vision.analyze_screen,
+                prompt
+            )
+            return result
+        except Exception as e:
+            logger.warning(f"Screen analysis failed: {e}")
+            return ""
+    
     async def _execute_step(self, step_name: str) -> StepResult:
-        """Execute a single step in the Skool workflow."""
+        """Execute a single workflow step."""
         
         # ==================== STEP 1: OPEN URL ====================
         if step_name == "click_osp_open_url":
             logger.info("Looking for OPEN URL button on OSP...")
             
-            screenshot = await self.take_screenshot("step01_before_open_url")
-            if not screenshot:
-                return StepResult(StepStatus.FAILED, "Failed to capture screenshot")
-            
-            # Ask vision: Where is the OPEN URL button on the right side?
-            element = await self.vision.find_element(
-                screenshot,
-                "button labeled 'OPEN URL' on the right side panel"
+            # Give 2 seconds for screen to be ready
+            coords = await self._find_and_click(
+                "The blue button labeled 'OPEN URL' on the right side panel",
+                pre_delay=2.0
             )
             
-            if not element:
-                return StepResult(StepStatus.FAILED, "OPEN URL button not found on OSP")
-            
-            # Click the button
-            await self.input.click_at(element.x, element.y)
-            logger.info(f"Clicked OPEN URL at ({element.x}, {element.y})")
-            
-            return StepResult(StepStatus.SUCCESS, "Clicked OPEN URL")
+            if coords:
+                return StepResult(StepStatus.SUCCESS, f"Clicked OPEN URL at {coords}")
+            return StepResult(StepStatus.FAILED, "OPEN URL button not found")
         
         # ==================== STEP 2: WAIT FOR SKOOL ====================
         elif step_name == "wait_for_skool_page":
             logger.info("Waiting for Skool page to load...")
+            # Wait longer for page to fully load
+            await asyncio.sleep(6)
             
-            # Wait a bit for page load
-            await asyncio.sleep(3)
-            
-            # Verify Skool page is visible
-            screenshot = await self.take_screenshot("step02_skool_loaded")
-            if not screenshot:
-                return StepResult(StepStatus.FAILED, "Failed to capture screenshot")
-            
-            state = await self.vision.verify_screen_state(
-                screenshot,
-                "Skool community page with navigation and content area visible"
+            # Verify page loaded
+            result = await self._analyze_screen(
+                "Is this a Skool community page? Answer YES or NO, then briefly describe what you see."
             )
+            logger.info(f"Page check response: {result[:100]}...")
             
-            if state.is_match:
+            if "YES" in result.upper() or "SKOOL" in result.upper():
                 return StepResult(StepStatus.SUCCESS, "Skool page loaded")
-            else:
-                # Try waiting a bit more
-                await asyncio.sleep(2)
-                return StepResult(StepStatus.SUCCESS, "Skool page loaded (assumed)")
+            
+            # Give it more time
+            await asyncio.sleep(3)
+            return StepResult(StepStatus.SUCCESS, "Skool page loaded (assumed)")
         
         # ==================== STEP 3: START POST ====================
         elif step_name == "click_start_post":
-            logger.info("Looking for 'Start a post' button on Skool...")
+            logger.info("Looking for 'Start a post' on Skool...")
             
-            screenshot = await self.take_screenshot("step03_find_start_post")
-            if not screenshot:
-                return StepResult(StepStatus.FAILED, "Failed to capture screenshot")
-            
-            # Ask vision: Where is the Start a post button?
-            element = await self.vision.find_element(
-                screenshot,
-                "button or clickable area to start a new post on Skool, might say 'Start a post', 'Create', 'Write something', or have a plus icon"
+            # Wait for page to be interactive
+            coords = await self._find_and_click(
+                "The button or text area to start a new post on Skool, might say 'Write something', 'Start a post', or 'Create'",
+                pre_delay=2.0
             )
             
-            if not element:
-                return StepResult(StepStatus.FAILED, "'Start a post' button not found")
-            
-            await self.input.click_at(element.x, element.y)
-            logger.info(f"Clicked 'Start a post' at ({element.x}, {element.y})")
-            
-            return StepResult(StepStatus.SUCCESS, "Clicked Start a post")
+            if coords:
+                return StepResult(StepStatus.SUCCESS, f"Clicked Start post at {coords}")
+            return StepResult(StepStatus.FAILED, "'Start a post' not found")
         
         # ==================== STEP 4: WAIT FOR DIALOG ====================
         elif step_name == "wait_for_post_dialog":
-            logger.info("Waiting for post creation dialog...")
+            logger.info("Waiting for post dialog...")
+            await asyncio.sleep(3)
+            
+            result = await self._analyze_screen(
+                "Is there a post creation dialog or form visible with input fields? Answer YES or NO."
+            )
+            logger.info(f"Dialog check response: {result[:100]}...")
+            
+            if "YES" in result.upper():
+                return StepResult(StepStatus.SUCCESS, "Post dialog opened")
             
             await asyncio.sleep(2)
-            
-            screenshot = await self.take_screenshot("step04_post_dialog")
-            if not screenshot:
-                return StepResult(StepStatus.FAILED, "Failed to capture screenshot")
-            
-            state = await self.vision.verify_screen_state(
-                screenshot,
-                "post creation dialog or form with title and body input fields visible"
-            )
-            
-            if state.is_match:
-                return StepResult(StepStatus.SUCCESS, "Post dialog opened")
-            else:
-                # Try clicking again or assume it's open
-                return StepResult(StepStatus.SUCCESS, "Post dialog (assumed open)")
+            return StepResult(StepStatus.SUCCESS, "Post dialog (assumed open)")
         
         # ==================== STEP 5: COPY TITLE ====================
         elif step_name == "click_osp_copy_title":
             logger.info("Looking for COPY TITLE button on OSP...")
             
-            screenshot = await self.take_screenshot("step05_before_copy_title")
-            if not screenshot:
-                return StepResult(StepStatus.FAILED, "Failed to capture screenshot")
-            
-            element = await self.vision.find_element(
-                screenshot,
-                "button labeled 'COPY TITLE' on the right side panel"
+            coords = await self._find_and_click(
+                "The blue button labeled 'Copy title' on the right side panel",
+                pre_delay=1.5
             )
             
-            if not element:
-                return StepResult(StepStatus.FAILED, "COPY TITLE button not found")
-            
-            await self.input.click_at(element.x, element.y)
-            logger.info(f"Clicked COPY TITLE at ({element.x}, {element.y})")
-            
-            # Brief wait for clipboard
-            await asyncio.sleep(0.5)
-            
-            return StepResult(StepStatus.SUCCESS, "Title copied to clipboard")
+            if coords:
+                await asyncio.sleep(1.0)  # Wait for clipboard
+                return StepResult(StepStatus.SUCCESS, "Title copied to clipboard")
+            return StepResult(StepStatus.FAILED, "COPY TITLE button not found")
         
         # ==================== STEP 6: PASTE TITLE ====================
         elif step_name == "paste_title":
-            logger.info("Looking for title paste location...")
+            logger.info("Looking for title field...")
             
-            screenshot = await self.take_screenshot("step06_find_title_field")
-            if not screenshot:
-                return StepResult(StepStatus.FAILED, "Failed to capture screenshot")
-            
-            # Ask vision: Where do I paste the title?
-            element = await self.vision.find_element(
-                screenshot,
-                "input field or text area for the post title, possibly highlighted in green, labeled 'Title', or the first input field in the post form"
+            coords = await self._find_and_click(
+                "The title input field in the post creation form, usually at the top of the form",
+                pre_delay=1.5
             )
             
-            if not element:
-                return StepResult(StepStatus.FAILED, "Title paste location not found")
+            if not coords:
+                return StepResult(StepStatus.FAILED, "Title field not found")
             
-            # Click the location
-            await self.input.click_at(element.x, element.y)
-            await asyncio.sleep(0.3)
-            
-            # Paste
-            await self.input.paste()
-            logger.info(f"Pasted title at ({element.x}, {element.y})")
-            
-            await asyncio.sleep(0.3)
+            await asyncio.sleep(0.5)
+            await asyncio.to_thread(self.input.hotkey, 'ctrl', 'v')
+            await asyncio.sleep(1.0)  # Wait for paste to complete
             
             return StepResult(StepStatus.SUCCESS, "Title pasted")
         
@@ -210,303 +206,198 @@ class SkoolWorkflow(AsyncBaseWorkflow):
         elif step_name == "click_osp_copy_body":
             logger.info("Looking for COPY BODY button on OSP...")
             
-            screenshot = await self.take_screenshot("step07_before_copy_body")
-            if not screenshot:
-                return StepResult(StepStatus.FAILED, "Failed to capture screenshot")
-            
-            element = await self.vision.find_element(
-                screenshot,
-                "button labeled 'COPY BODY' on the right side panel"
+            coords = await self._find_and_click(
+                "The blue button labeled 'Copy body' on the right side panel",
+                pre_delay=1.5
             )
             
-            if not element:
-                return StepResult(StepStatus.FAILED, "COPY BODY button not found")
-            
-            await self.input.click_at(element.x, element.y)
-            logger.info(f"Clicked COPY BODY at ({element.x}, {element.y})")
-            
-            await asyncio.sleep(0.5)
-            
-            return StepResult(StepStatus.SUCCESS, "Body copied to clipboard")
+            if coords:
+                await asyncio.sleep(1.0)  # Wait for clipboard
+                return StepResult(StepStatus.SUCCESS, "Body copied to clipboard")
+            return StepResult(StepStatus.FAILED, "COPY BODY button not found")
         
         # ==================== STEP 8: PASTE BODY ====================
         elif step_name == "paste_body":
-            logger.info("Looking for body paste location...")
+            logger.info("Looking for body/image paste area with red background...")
             
-            screenshot = await self.take_screenshot("step08_find_body_field")
-            if not screenshot:
-                return StepResult(StepStatus.FAILED, "Failed to capture screenshot")
-            
-            element = await self.vision.find_element(
-                screenshot,
-                "larger text area for post body content, description, or message content, possibly highlighted in red, or the main content area below the title"
+            # Look for the specific red label that says where to paste body AND image
+            coords = await self._find_and_click(
+                "Find the text that says 'Click here & Paste Body Content & Click & Paste Image' - it has WHITE TEXT on a RED BACKGROUND. Click directly on that red labeled area.",
+                pre_delay=1.5
             )
             
-            if not element:
-                return StepResult(StepStatus.FAILED, "Body paste location not found")
+            if not coords:
+                # Fallback to generic description
+                coords = await self._find_and_click(
+                    "The red highlighted area or red background label in the post form where body content should be pasted",
+                    pre_delay=1.0
+                )
             
-            await self.input.click_at(element.x, element.y)
-            await asyncio.sleep(0.3)
-            await self.input.paste()
-            logger.info(f"Pasted body at ({element.x}, {element.y})")
+            if not coords:
+                return StepResult(StepStatus.FAILED, "Body paste area not found")
             
-            await asyncio.sleep(0.3)
+            # Store these coordinates for image paste step (same location)
+            self.set_step_data("body_paste_coords", coords)
             
-            return StepResult(StepStatus.SUCCESS, "Body pasted")
+            await asyncio.sleep(0.5)
+            await asyncio.to_thread(self.input.hotkey, 'ctrl', 'v')
+            await asyncio.sleep(1.0)  # Wait for paste to complete
+            
+            return StepResult(StepStatus.SUCCESS, f"Body pasted at {coords}")
         
         # ==================== STEP 9: COPY IMAGE ====================
         elif step_name == "click_osp_copy_image":
             logger.info("Looking for COPY IMAGE button on OSP...")
             
-            screenshot = await self.take_screenshot("step09_before_copy_image")
-            if not screenshot:
-                return StepResult(StepStatus.FAILED, "Failed to capture screenshot")
-            
-            element = await self.vision.find_element(
-                screenshot,
-                "button labeled 'COPY IMAGE' on the right side panel"
+            coords = await self._find_and_click(
+                "The blue button labeled 'Copy image' on the right side panel",
+                pre_delay=1.5
             )
             
-            if not element:
-                # Image might be optional - check if post has image
-                if self.current_post and not self.current_post.image_path and not self.current_post.image_base64:
-                    logger.info("No image in post, skipping image step")
-                    self.set_step_data("has_image", False)
-                    return StepResult(StepStatus.SKIPPED, "No image to copy")
-                return StepResult(StepStatus.FAILED, "COPY IMAGE button not found")
+            if coords:
+                await asyncio.sleep(2.0)  # Image copy takes longer
+                self.set_step_data("has_image", True)
+                return StepResult(StepStatus.SUCCESS, "Image copied to clipboard")
             
-            await self.input.click_at(element.x, element.y)
-            logger.info(f"Clicked COPY IMAGE at ({element.x}, {element.y})")
-            
-            await asyncio.sleep(1.0)  # Image copy may take longer
-            self.set_step_data("has_image", True)
-            
-            return StepResult(StepStatus.SUCCESS, "Image copied to clipboard")
+            # Image may be optional
+            logger.info("COPY IMAGE not found - may not have image")
+            self.set_step_data("has_image", False)
+            return StepResult(StepStatus.SKIPPED, "No image to copy")
         
         # ==================== STEP 10: PASTE IMAGE ====================
         elif step_name == "paste_image":
-            # Skip if no image
-            if not self.get_step_data("has_image", True):
+            if not self.get_step_data("has_image", False):
                 return StepResult(StepStatus.SKIPPED, "No image to paste")
             
-            logger.info("Looking for image paste location...")
+            logger.info("Clicking same location as body paste for image...")
             
-            screenshot = await self.take_screenshot("step10_find_image_area")
-            if not screenshot:
-                return StepResult(StepStatus.FAILED, "Failed to capture screenshot")
+            # Use the SAME coordinates where we pasted the body - that's where image goes too
+            body_coords = self.get_step_data("body_paste_coords")
             
-            element = await self.vision.find_element(
-                screenshot,
-                "image upload area, drag and drop zone, button to add image/media, attachment button, or image icon in the post form"
-            )
+            if body_coords:
+                # Click the same spot we used for body paste
+                x, y = body_coords
+                logger.info(f"Using saved body paste coordinates: ({x}, {y})")
+                await asyncio.sleep(1.5)
+                await asyncio.to_thread(self.input.move_to, x, y)
+                await asyncio.sleep(0.5)
+                await asyncio.to_thread(self.input.click, 'left')
+                await asyncio.sleep(0.5)
+            else:
+                # Fallback: find the red area again
+                logger.info("No saved coords, looking for red paste area again...")
+                coords = await self._find_and_click(
+                    "Find the text that says 'Click here & Paste Body Content & Click & Paste Image' - it has WHITE TEXT on a RED BACKGROUND. Click directly on that red labeled area.",
+                    pre_delay=1.5
+                )
+                if coords:
+                    await asyncio.sleep(0.5)
             
-            if not element:
-                # Try pasting directly into the body area
-                logger.info("Image area not found, trying direct paste")
-                await self.input.paste()
-                await asyncio.sleep(2)
-                return StepResult(StepStatus.SUCCESS, "Image pasted (direct)")
-            
-            await self.input.click_at(element.x, element.y)
-            await asyncio.sleep(0.3)
-            await self.input.paste()
-            logger.info(f"Pasted image at ({element.x}, {element.y})")
-            
-            # Wait for image to upload
-            await asyncio.sleep(3)
+            # Paste the image
+            await asyncio.to_thread(self.input.hotkey, 'ctrl', 'v')
+            await asyncio.sleep(4)  # Wait longer for image upload
             
             return StepResult(StepStatus.SUCCESS, "Image pasted")
         
         # ==================== STEP 11: CHECK EMAIL TOGGLE ====================
         elif step_name == "check_email_toggle":
-            logger.info("Checking if email toggle is needed...")
+            logger.info("Checking if email notification is needed...")
             
-            # Check if post requires email notification
             needs_email = False
-            if self.current_post and self.current_post.send_email:
-                needs_email = True
-            else:
-                # Also check OSP panel for email indicator
-                screenshot = await self.take_screenshot("step11_check_email")
-                if screenshot:
-                    needs_email = await self.vision.check_osp_email_toggle(screenshot)
+            if self.current_post and hasattr(self.current_post, 'send_email'):
+                needs_email = self.current_post.send_email
             
-            # Store result for next step
             self.set_step_data("email_toggle_needed", needs_email)
             
-            if needs_email:
-                logger.info("Email toggle IS needed")
-            else:
-                logger.info("Email toggle NOT needed")
-            
             return StepResult(
-                StepStatus.SUCCESS, 
-                f"Email toggle check: {'needed' if needs_email else 'not needed'}",
+                StepStatus.SUCCESS,
+                f"Email toggle: {'needed' if needs_email else 'not needed'}",
                 data={"needs_email": needs_email}
             )
         
-        # ==================== STEP 12: TOGGLE EMAIL IF NEEDED ====================
+        # ==================== STEP 12: TOGGLE EMAIL ====================
         elif step_name == "toggle_email_if_needed":
             if not self.get_step_data("email_toggle_needed", False):
-                logger.info("Skipping email toggle (not needed)")
                 return StepResult(StepStatus.SKIPPED, "Email toggle not needed")
             
-            logger.info("Looking for email toggle on Skool...")
+            logger.info("Looking for email notification toggle...")
             
-            screenshot = await self.take_screenshot("step12_find_email_toggle")
-            if not screenshot:
-                return StepResult(StepStatus.FAILED, "Failed to capture screenshot")
-            
-            # Ask vision: Where is the email toggle?
-            element = await self.vision.find_element(
-                screenshot,
-                "checkbox or toggle for 'send email to members', 'notify members', 'email notification', possibly a toggle switch or checkbox"
+            coords = await self._find_and_click(
+                "The checkbox or toggle for 'notify members' or 'send email notification'"
             )
             
-            if not element:
-                logger.warning("Email toggle not found, skipping")
-                return StepResult(StepStatus.SKIPPED, "Email toggle not found")
+            if coords:
+                return StepResult(StepStatus.SUCCESS, "Email toggled")
             
-            await self.input.click_at(element.x, element.y)
-            logger.info(f"Toggled email at ({element.x}, {element.y})")
-            
-            await asyncio.sleep(0.3)
-            
-            return StepResult(StepStatus.SUCCESS, "Email toggled")
+            return StepResult(StepStatus.SKIPPED, "Email toggle not found")
         
         # ==================== STEP 13: CLICK OSP POST ====================
         elif step_name == "click_osp_post":
             logger.info("Looking for POST button on OSP...")
             
-            screenshot = await self.take_screenshot("step13_before_osp_post")
-            if not screenshot:
-                return StepResult(StepStatus.FAILED, "Failed to capture screenshot")
-            
-            element = await self.vision.find_element(
-                screenshot,
-                "button labeled 'POST' on the right side panel, likely orange or prominently colored"
+            coords = await self._find_and_click(
+                "The orange or prominent POST button on the right side panel",
+                pre_delay=2.0
             )
             
-            if not element:
-                return StepResult(StepStatus.FAILED, "POST button not found on OSP")
-            
-            await self.input.click_at(element.x, element.y)
-            logger.info(f"Clicked OSP POST at ({element.x}, {element.y})")
-            
-            await asyncio.sleep(0.5)
-            
-            return StepResult(StepStatus.SUCCESS, "Ready to post")
+            if coords:
+                await asyncio.sleep(1.0)
+                return StepResult(StepStatus.SUCCESS, "Clicked OSP POST")
+            return StepResult(StepStatus.FAILED, "OSP POST button not found")
         
         # ==================== STEP 14: CLICK SKOOL POST ====================
         elif step_name == "click_skool_post_button":
             logger.info("Looking for Skool's Post button...")
             
-            screenshot = await self.take_screenshot("step14_find_skool_post")
-            if not screenshot:
-                return StepResult(StepStatus.FAILED, "Failed to capture screenshot")
-            
-            # Ask vision: Where is the final Post button on Skool?
-            element = await self.vision.find_element(
-                screenshot,
-                "the main Post or Submit button on Skool to publish the post, usually in the post form itself, NOT the OSP panel button"
+            coords = await self._find_and_click(
+                "The Post or Submit button on the Skool post form itself, NOT the OSP panel, usually in the post dialog",
+                pre_delay=2.0
             )
             
-            if not element:
-                return StepResult(StepStatus.FAILED, "Skool Post button not found")
-            
-            await self.input.click_at(element.x, element.y)
-            logger.info(f"Clicked Skool Post at ({element.x}, {element.y})")
-            
-            # Wait for posting to complete
-            await asyncio.sleep(4)
-            
-            return StepResult(StepStatus.SUCCESS, "Clicked Post")
+            if coords:
+                await asyncio.sleep(5)  # Wait for post to submit
+                return StepResult(StepStatus.SUCCESS, "Clicked Skool Post")
+            return StepResult(StepStatus.FAILED, "Skool Post button not found")
         
         # ==================== STEP 15: VERIFY SUCCESS ====================
         elif step_name == "verify_post_success":
-            logger.info("Verifying post was successful...")
+            logger.info("Verifying post success...")
             
-            screenshot = await self.take_screenshot("step15_verify_success")
-            if not screenshot:
-                return StepResult(StepStatus.FAILED, "Failed to capture screenshot")
-            
-            # Ask vision: Is there a green confirmation box?
-            state = await self.vision.verify_screen_state(
-                screenshot,
-                "green confirmation message, success notification, 'Post created' message, or the post now appearing in the feed"
+            result = await self._analyze_screen(
+                "Is there a success message, green confirmation, or does the post appear in the feed? Answer SUCCESS if posted successfully, FAILED if there's an error, or UNCLEAR if you can't tell."
             )
             
-            if state.is_match:
-                logger.info("Post confirmed successful!")
+            if "SUCCESS" in result.upper() or "POST" in result.upper():
                 self.set_step_data("post_successful", True)
-                return StepResult(StepStatus.SUCCESS, "Post confirmed")
+                return StepResult(StepStatus.SUCCESS, "Post confirmed successful")
+            elif "FAILED" in result.upper() or "ERROR" in result.upper():
+                self.set_step_data("post_successful", False)
+                return StepResult(StepStatus.SUCCESS, f"Post may have failed: {result[:100]}")
             else:
-                # Check for error
-                error = await self.vision.check_for_error_dialog(screenshot)
-                if error:
-                    logger.error(f"Error detected: {error}")
-                    self.set_step_data("post_successful", False)
-                    return StepResult(StepStatus.SUCCESS, f"Post may have failed: {error}")
-                
-                # Ambiguous - assume success for now
-                logger.warning("Success confirmation not clearly found, assuming success")
                 self.set_step_data("post_successful", True)
                 return StepResult(StepStatus.SUCCESS, "Post status uncertain, assuming success")
         
-        # ==================== STEP 16: CLICK SUCCESS OR FAIL ====================
+        # ==================== STEP 16: REPORT RESULT ====================
         elif step_name == "click_success_or_fail":
             post_successful = self.get_step_data("post_successful", True)
             
-            screenshot = await self.take_screenshot("step16_final")
-            if not screenshot:
-                return StepResult(StepStatus.FAILED, "Failed to capture screenshot")
-            
             if post_successful:
                 logger.info("Looking for SUCCESS button on OSP...")
-                
-                element = await self.vision.find_element(
-                    screenshot,
-                    "green button labeled 'SUCCESS' on the right side panel"
+                coords = await self._find_and_click(
+                    "Find the exact location of the GREEN SUCCESS button on the right side panel. It is a bright green button with white text that says 'SUCCESS'. Provide the CENTER coordinates of this green button.",
+                    pre_delay=2.0
                 )
-                
-                if not element:
-                    # Try alternate names
-                    element = await self.vision.find_element(
-                        screenshot,
-                        "button indicating success, completion, or done on the right panel"
-                    )
-                
-                if not element:
-                    return StepResult(StepStatus.FAILED, "SUCCESS button not found")
-                
-                await self.input.click_at(element.x, element.y)
-                logger.info(f"Clicked SUCCESS at ({element.x}, {element.y})")
-                
-                return StepResult(StepStatus.SUCCESS, "Reported success")
-            
             else:
                 logger.info("Looking for FAILED button on OSP...")
-                
-                element = await self.vision.find_element(
-                    screenshot,
-                    "red button labeled 'FAILED' on the right side panel"
+                coords = await self._find_and_click(
+                    "Find the exact location of the RED FAILED button on the right side panel. It is a red button with white text that says 'FAILED'. Provide the CENTER coordinates of this red button.",
+                    pre_delay=2.0
                 )
-                
-                if not element:
-                    # Try alternate names
-                    element = await self.vision.find_element(
-                        screenshot,
-                        "button indicating failure or error on the right panel"
-                    )
-                
-                if not element:
-                    return StepResult(StepStatus.FAILED, "FAILED button not found")
-                
-                await self.input.click_at(element.x, element.y)
-                logger.info(f"Clicked FAILED at ({element.x}, {element.y})")
-                
-                return StepResult(StepStatus.SUCCESS, "Reported failure")
+            
+            if coords:
+                return StepResult(StepStatus.SUCCESS, f"Reported {'success' if post_successful else 'failure'}")
+            
+            return StepResult(StepStatus.FAILED, f"{'SUCCESS' if post_successful else 'FAILED'} button not found")
         
         # Unknown step
-        else:
-            return StepResult(StepStatus.FAILED, f"Unknown step: {step_name}")
+        return StepResult(StepStatus.FAILED, f"Unknown step: {step_name}")
