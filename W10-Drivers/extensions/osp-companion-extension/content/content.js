@@ -6,6 +6,9 @@
     let userRules = [];
     let highlightElementsMap = new Map(); // Highlight DOM -> {element, rule}
     let editorHoverElement = null;
+    let hiddenElements = []; // For Layer Peeler feature
+    let cursorX = 0;
+    let cursorY = 0;
 
     // ===== CONFIG =====
     // Colors: Tailwind css values
@@ -160,10 +163,24 @@
 
     function updateHighlightPosition(highlight, element, labelPos = 'top') {
         const rect = element.getBoundingClientRect();
+
+        // Clamp dimensions to viewport/reasonable max to prevent "flying off screen"
+        const MAX_HEIGHT = 500;
+        const width = rect.width;
+        let height = rect.height;
+        let top = rect.top + window.scrollY;
+
+        // If element is excessively tall, we cap it and show top portion
+        if (height > MAX_HEIGHT) {
+            height = MAX_HEIGHT;
+            // Optionally could add a visual indicator class here
+            highlight.classList.add('osp-highlight-truncated');
+        }
+
         highlight.style.left = `${rect.left + window.scrollX}px`;
-        highlight.style.top = `${rect.top + window.scrollY}px`;
-        highlight.style.width = `${rect.width}px`;
-        highlight.style.height = `${rect.height}px`;
+        highlight.style.top = `${top}px`;
+        highlight.style.width = `${width}px`;
+        highlight.style.height = `${height}px`;
 
         const label = highlight.querySelector('.osp-highlight-label');
         if (label) {
@@ -240,35 +257,51 @@
 
     // ===== SELECTOR GENERATION (HARDENED) =====
     function generateSelector(el) {
-        // Try to generate a selector
+        // 1. Try simple raw selector first
         let selector = _generateRawSelector(el);
+        if (document.querySelectorAll(selector).length === 1) return selector;
 
-        // Verify uniqueness
-        let matches = document.querySelectorAll(selector);
+        // 2. Iterative Climbing (Up to 15 levels)
+        let currentEl = el;
+        const pathSegments = [];
 
-        // If not unique, try adding parent context
-        if (matches.length > 1 && el.parentElement) {
-            const parentSel = _generateRawSelector(el.parentElement);
-            const combined = `${parentSel} > ${selector}`;
-            if (document.querySelectorAll(combined).length === 1) {
-                return combined;
-            }
-            // If still not unique, try grand-parent
-            if (el.parentElement.parentElement) {
-                const grandParent = _generateRawSelector(el.parentElement.parentElement);
-                const combined2 = `${grandParent} > ${combined}`;
-                if (document.querySelectorAll(combined2).length === 1) {
-                    return combined2;
+        for (let i = 0; i < 50; i++) {
+            if (!currentEl || currentEl.tagName === 'BODY' || currentEl.tagName === 'HTML') break;
+
+            // 1. Get base selector (Attribute or Tag)
+            let levelSelector = _generateRawSelector(currentEl);
+
+            // 2. Always add nth-of-type for robustness unless it's an ID
+            if (!levelSelector.startsWith('#')) {
+                const tag = currentEl.tagName.toLowerCase();
+                // If the base selector is just attributes, prepends tag for valid CSS: [role='button'] -> div[role='button']
+                if (levelSelector.startsWith('[')) {
+                    levelSelector = tag + levelSelector;
+                }
+
+                // Calculate Index
+                if (currentEl.parentElement) {
+                    const siblings = Array.from(currentEl.parentElement.children).filter(c => c.tagName.toLowerCase() === tag);
+                    if (siblings.length > 1) {
+                        const index = siblings.indexOf(currentEl) + 1;
+                        levelSelector += `:nth-of-type(${index})`;
+                    }
                 }
             }
+
+            pathSegments.unshift(levelSelector);
+
+            // Check combined path uniqueness
+            const fullPath = pathSegments.join(' > ');
+            if (document.querySelectorAll(fullPath).length === 1) {
+                return fullPath;
+            }
+
+            currentEl = currentEl.parentElement;
         }
 
-        // Fallback to strict path if all else fails or if original was just a tag
-        if (matches.length !== 1) {
-            return getStrictPath(el);
-        }
-
-        return selector;
+        // 3. Fallback: Strict Path (Absolute)
+        return getStrictPath(el);
     }
 
     function _generateRawSelector(el) {
@@ -334,7 +367,7 @@
     function getStrictPath(el) {
         let path = [];
         let curr = el;
-        for (let i = 0; i < 4; i++) {
+        for (let i = 0; i < 20; i++) {
             if (!curr || curr.nodeType !== Node.ELEMENT_NODE || curr.tagName === 'BODY') break;
 
             let sel = curr.tagName.toLowerCase();
@@ -369,8 +402,10 @@
         if (active) {
             document.body.style.cursor = 'crosshair';
             document.addEventListener('mouseover', onEditorHover, true);
+            document.addEventListener('mousemove', onMouseMove, true); // Track cursor
             document.addEventListener('click', onEditorClick, true);
             document.addEventListener('mouseout', onEditorOut, true);
+            document.addEventListener('keydown', onEditorKeydown, true);
 
             // Re-run highlights to reveal hidden ones (Context Ignored)
             applyAllHighlights();
@@ -383,13 +418,14 @@
         } else {
             document.body.style.cursor = '';
             document.removeEventListener('mouseover', onEditorHover, true);
+            document.removeEventListener('mousemove', onMouseMove, true);
             document.removeEventListener('click', onEditorClick, true);
             document.removeEventListener('mouseout', onEditorOut, true);
+            document.removeEventListener('keydown', onEditorKeydown, true);
 
             removeEditorHover();
             removeModal();
-
-            // Reset highlights
+            // restoreHiddenElements(); // Removed to persist hidden layers across toggles
             document.querySelectorAll('.osp-static-highlight').forEach(el => {
                 el.style.pointerEvents = 'none';
             });
@@ -435,6 +471,11 @@
         }
     }
 
+    function onMouseMove(e) {
+        cursorX = e.clientX;
+        cursorY = e.clientY;
+    }
+
     function onEditorClick(e) {
         if (!isEditorMode) return;
         if (e.target.closest('.osp-advanced-modal')) return;
@@ -457,9 +498,48 @@
         showAdvancedModal(target, e.clientX, e.clientY);
     }
 
+    function onEditorKeydown(e) {
+        if (!isEditorMode) return;
+
+        // H or X to HIDE element (Layer Peeler)
+        if (e.key.toLowerCase() === 'h' || e.key.toLowerCase() === 'x') {
+            if (editorHoverElement) {
+                e.preventDefault();
+                e.stopPropagation();
+
+                // Hide it
+                editorHoverElement.style.visibility = 'hidden';
+                hiddenElements.push(editorHoverElement);
+
+                console.log('[OSP] Hidden element:', editorHoverElement);
+
+                // Force reset hover so the mouse can "fall through" to the next element
+                // We need to use the tracked current cursor position
+                removeEditorHover();
+
+                // Retrigger hover check
+                const elementUnder = document.elementFromPoint(cursorX, cursorY);
+                if (elementUnder) {
+                    onEditorHover({ target: elementUnder, preventDefault: () => { }, stopPropagation: () => { } });
+                }
+            }
+        }
+
+        // R to RESTORE all
+        if (e.key.toLowerCase() === 'r') {
+            restoreHiddenElements();
+        }
+    }
+
+    function restoreHiddenElements() {
+        hiddenElements.forEach(el => el.style.visibility = '');
+        hiddenElements = [];
+        console.log('[OSP] Restored all hidden elements.');
+    }
+
 
     // ===== ADVANCED MODAL =====
-    function showAdvancedModal(targetElement, x, y, existingRule = null) {
+    function showAdvancedModal(targetElement, clickX, clickY, existingRule = null) {
         removeModal();
 
         const isEditing = !!existingRule;
@@ -476,6 +556,9 @@
 
         const modal = document.createElement('div');
         modal.className = 'osp-advanced-modal';
+        modal.style.visibility = 'hidden'; // Hide to measure
+        modal.style.top = '0px';
+        modal.style.left = '0px';
 
         // UI Generation
         const colorGridHtml = COLORS.map(c =>
@@ -562,13 +645,36 @@
             </div>
         `;
 
-        // Smart Positioning
-        const modalX = Math.min(x, window.innerWidth - 400);
-        const modalY = Math.min(y, window.innerHeight - 500);
-        modal.style.left = `${Math.max(10, modalX)}px`;
-        modal.style.top = `${Math.max(10, modalY)}px`;
-
         document.body.appendChild(modal);
+
+        // Smart Positioning (Bounds Check)
+        const rect = modal.getBoundingClientRect();
+        const viewportW = window.innerWidth;
+        const viewportH = window.innerHeight;
+
+        // Default: try to place slightly offset from cursor
+        let finalX = clickX + 10;
+        let finalY = clickY + 10;
+
+        // X Axis Check
+        if (finalX + rect.width > viewportW) {
+            finalX = viewportW - rect.width - 20;
+            if (finalX < 10) finalX = 10;
+        }
+
+        // Y Axis Check
+        if (finalY + rect.height > viewportH) {
+            finalY = viewportH - rect.height - 20;
+            // Try shifting above if still tight
+            if (finalY < 10) {
+                const tryAbove = clickY - rect.height - 10;
+                if (tryAbove > 0) finalY = tryAbove;
+            }
+        }
+
+        modal.style.left = `${finalX}px`;
+        modal.style.top = `${finalY}px`;
+        modal.style.visibility = 'visible'; // Show after move
 
         // Inputs
         const labelInput = modal.querySelector('#osp-label-input');

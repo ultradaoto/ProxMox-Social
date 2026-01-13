@@ -30,8 +30,7 @@ class PlaybookExecutor:
         if "skool" in platform:
             return self.run_skool_playbook(post)
         elif "instagram" in platform:
-            logger.warning("Instagram playbook not yet implemented.")
-            return False
+            return self.run_instagram_playbook(post)
         else:
             logger.warning(f"No playbook for platform: {platform}")
             return False
@@ -138,6 +137,106 @@ class PlaybookExecutor:
                 
         except Exception as e:
             logger.error(f"Playbook execution failed: {e}")
+            self.api.report_failure(post['id'], str(e))
+            return False
+
+    def run_instagram_playbook(self, post: Dict[str, Any]) -> bool:
+        """
+        Execute the Instagram posting workflow.
+        Target: Instagram web interface
+        """
+        try:
+            # 1. Setup Data
+            instagram_url = "https://www.instagram.com/"
+
+            caption = post.get('caption', '')
+            media_files = post.get('media', [])
+            post_id = post.get('id')
+
+            # Instagram uses single caption (title + body combined)
+            # Caption already contains both title and body from the fetcher
+
+            logger.info(f"Step 1: Navigate to Instagram: {instagram_url}")
+            self._navigate_to_url(instagram_url)
+            time.sleep(5)  # Wait for load
+
+            # 2. Click "Create" button (plus icon)
+            logger.info("Step 2: Find 'Create' button")
+            create_coords = self.vision.find_element("The 'Create' button or plus icon to start a new post on Instagram.")
+            self.input.click('left')  # Ensure focus
+            self.input.move_to(create_coords[0], create_coords[1])
+            self.input.click('left')
+            time.sleep(2)
+
+            # 3. Upload Image
+            logger.info("Step 3: Upload Image")
+            # Look for "Select from computer" button or upload area
+            upload_btn = self.vision.find_element("The 'Select from computer' button or file upload area in Instagram's create dialog.")
+            self.input.move_to(upload_btn[0], upload_btn[1])
+            self.input.click('left')
+            time.sleep(1.5)
+
+            # Use Wildcard Path Strategy
+            # Path: C:\PostQueue\pending\*_{post_id}\media_1.jpg
+            if media_files:
+                wildcard_path = f"C:\\PostQueue\\pending\\*_{post_id}\\media_1.jpg"
+                logger.info(f"  Typing path: {wildcard_path}")
+
+                self.input.type_text(wildcard_path)
+                time.sleep(1.0)
+                self.input.hotkey('enter')
+
+                # Wait for upload to process
+                logger.info("  Waiting for upload...")
+                time.sleep(4.0)
+            else:
+                logger.warning("No media files provided, Instagram requires images")
+                return False
+
+            # 4. Click Next (to editing screen)
+            logger.info("Step 4: Click Next to editing")
+            next_btn = self.vision.find_element("The 'Next' button in the top right corner of Instagram's create dialog.")
+            self.input.move_to(next_btn[0], next_btn[1])
+            self.input.click('left')
+            time.sleep(2)
+
+            # 5. Click Next again (to caption screen)
+            logger.info("Step 5: Click Next to caption")
+            next_btn2 = self.vision.find_element("The 'Next' button to proceed to the caption screen.")
+            self.input.move_to(next_btn2[0], next_btn2[1])
+            self.input.click('left')
+            time.sleep(2)
+
+            # 6. Add Caption
+            logger.info("Step 6: Add Caption")
+            caption_area = self.vision.find_element("The caption text area that says 'Write a caption...' on Instagram.")
+            self.input.move_to(caption_area[0], caption_area[1])
+            self.input.click('left')
+            time.sleep(0.5)
+
+            # Type caption
+            logger.info(f"  Typing caption ({len(caption)} chars)")
+            self.input.type_text(caption)
+            time.sleep(1)
+
+            # 7. Click Share
+            logger.info("Step 7: Click Share")
+            share_btn = self.vision.find_element("The 'Share' button to publish the Instagram post.")
+            self.input.move_to(share_btn[0], share_btn[1])
+            self.input.click('left')
+            time.sleep(5)  # Wait for post to complete
+
+            # 8. Verify
+            verification = self.vision.analyze_screen("Did the Instagram post submit successfully? Answer SUCCESS or FAILED.")
+            if "SUCCESS" in verification.upper():
+                self.api.report_success(post['id'])
+                return True
+            else:
+                self.api.report_failure(post['id'], verification)
+                return False
+
+        except Exception as e:
+            logger.error(f"Instagram playbook execution failed: {e}")
             self.api.report_failure(post['id'], str(e))
             return False
 
