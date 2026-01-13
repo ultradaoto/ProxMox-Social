@@ -203,6 +203,13 @@ class BrainOrchestrator:
         logger.info(f"URL: {post.url}")
         logger.info("=" * 60)
         
+        # Wait for Windows 10 OSP GUI to download and display the post
+        # This prevents a race condition where we click before content is ready
+        osp_load_delay = 15  # seconds
+        logger.info(f"Waiting {osp_load_delay}s for Windows 10 OSP to load post content...")
+        await asyncio.sleep(osp_load_delay)
+        logger.info("OSP load delay complete, starting workflow...")
+        
         self.current_post = post
         
         try:
