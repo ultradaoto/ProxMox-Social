@@ -1463,33 +1463,49 @@ class PrompterWindow(QMainWindow):
     def update_display(self):
         """
         Update the UI to reflect current job state.
-        
+
         SIMPLIFIED CONTROL PANEL: No dynamic button changes.
         Just update the header info, image preview, and status.
         """
         # Reset guidance tracking so highlights can be re-triggered for new jobs
         self.last_guidance_field = None
         self.last_guidance_text = None
-        
+
         job = self.queue.current_job
         if not job:
-            self.platform_label.setText("Platform: ---")
-            self.post_id_label.setText("Post ID: ---")
+            # === NO POSTS AVAILABLE - SHOW BIG RED X ===
+            self.platform_label.setText("NO POSTS AVAILABLE")
+            self.platform_label.setStyleSheet("color: #ef4444; font-weight: bold; font-size: 16px; background-color: #7f1d1d; padding: 8px; border-radius: 5px;")
+
+            self.post_id_label.setText("NOT READY - NO POSTS")
+            self.post_id_label.setStyleSheet("color: #fca5a5; font-size: 12px; font-weight: bold;")
+
+            # Show BIG RED X in image area
             self.image_label.clear()
-            self.image_label.setText("No Image")
+            self.image_label.setText("✗\nNO POSTS")
+            self.image_label.setStyleSheet("""
+                background: #7f1d1d;
+                border: 3px solid #ef4444;
+                border-radius: 8px;
+                color: #ef4444;
+                font-size: 28px;
+                font-weight: bold;
+            """)
+
             self.email_alert_label.setText("☐ Send Email Notification")
-            self.update_status("Waiting for job...")
+            self.update_status("⚠ NO POSTS AVAILABLE - NOT READY")
             return
 
         # Update header info
         color = PLATFORM_COLORS.get(job.platform, "#888888")
         self.platform_label.setText(f"Platform: {job.platform.value.upper()}")
         self.platform_label.setStyleSheet(f"color: {color}; font-weight: bold; font-size: 14px;")
-        
-        # Post ID
+
+        # Post ID (reset style to normal)
         job_id_display = job.job_id[:20] + "..." if len(job.job_id) > 20 else job.job_id
         self.post_id_label.setText(f"Post ID: {job_id_display}")
-        
+        self.post_id_label.setStyleSheet("color: #95a5a6; font-size: 10px;")
+
         # Email checkbox state
         if job.email_members:
             self.email_alert_label.setText("☑ Send Email Notification")
@@ -1497,8 +1513,9 @@ class PrompterWindow(QMainWindow):
         else:
             self.email_alert_label.setText("☐ Send Email Notification")
             self.email_alert_label.setStyleSheet("color: #ccc; font-size: 11px; padding: 5px;")
-        
-        # Image preview
+
+        # Image preview (reset style to normal)
+        self.image_label.setStyleSheet("background: #000; border-radius: 3px;")
         img_path = job.image_path
         if img_path and os.path.exists(img_path):
             try:
@@ -1509,6 +1526,7 @@ class PrompterWindow(QMainWindow):
             except:
                 self.image_label.setText("Img Error")
         else:
+            self.image_label.clear()
             self.image_label.setText("No Image")
         
         # Update status

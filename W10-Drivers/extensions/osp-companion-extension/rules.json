@@ -4,7 +4,7 @@
         "domain": "www.skool.com",
         "id": "mk94dkl5",
         "label": "Click and Paste Title Here",
-        "selector": "[data-testid='title-input']",
+        "selector": "[data-testid=",
         "style": "rectangle"
     },
     {
@@ -23,7 +23,7 @@
         "domain": "www.skool.com",
         "id": "mk952v2s",
         "label": "Click here and Paste Title",
-        "selector": ".cJtswi > [data-testid='title-input']",
+        "selector": ".cJtswi > [data-testid=",
         "style": "rectangle"
     },
     {
@@ -31,7 +31,7 @@
         "domain": "www.skool.com",
         "id": "mk954ji9",
         "label": "Click here and Paste Title",
-        "selector": ".cJtswi > [data-testid='title-input']",
+        "selector": ".cJtswi > [data-testid=",
         "style": "rectangle"
     },
     {
@@ -86,6 +86,90 @@
         "label": "SUCCESS: Post Created",
         "labelPosition": "top",
         "selector": ".styled__PostDetailHeader-sc-g7syap-18 > .styled__BoxWrapper-sc-esqoz3-0 > .styled__ButtonWrapper-sc-1crx28g-1",
+        "style": "rectangle"
+    },
+    {
+        "color": "#3b82f6",
+        "contextText": "",
+        "domain": "www.instagram.com",
+        "ensureVisible": false,
+        "excludedContextText": "",
+        "id": "mkc8h8ta",
+        "label": "NEXT",
+        "labelPosition": "top",
+        "selector": "._ac7b:nth-of-type(3) > .html-div > div[role=\"button\"]",
+        "style": "rectangle"
+    },
+    {
+        "color": "#ef4444",
+        "contextText": "",
+        "domain": "www.instagram.com",
+        "ensureVisible": false,
+        "excludedContextText": "",
+        "id": "mkc8qm66",
+        "label": "Click here and Paste BODY",
+        "labelPosition": "inside",
+        "selector": "[aria-label=\"Write\\ a\\ caption\\.\\.\\.\"]",
+        "style": "rectangle"
+    },
+    {
+        "color": "#ef4444",
+        "contextText": "",
+        "domain": "www.instagram.com",
+        "ensureVisible": false,
+        "excludedContextText": "",
+        "id": "mkc948ex",
+        "label": "RESIZE",
+        "labelPosition": "top",
+        "selector": ".html-div:nth-of-type(1) > .html-div > div:nth-of-type(2) > div[role=\"button\"] > ._aswp > .html-div",
+        "style": "rectangle"
+    },
+    {
+        "color": "#ef4444",
+        "contextText": "",
+        "domain": "www.instagram.com",
+        "ensureVisible": false,
+        "excludedContextText": "",
+        "id": "mkc9jnua",
+        "label": "4:5 RATIO SELECT",
+        "labelPosition": "top",
+        "selector": "div[role=\"button\"]:nth-of-type(3) > .html-div",
+        "style": "rectangle"
+    },
+    {
+        "color": "#10b981",
+        "contextText": "",
+        "domain": "www.instagram.com",
+        "ensureVisible": false,
+        "excludedContextText": "",
+        "id": "mkc9mkrg",
+        "label": "New Post",
+        "labelPosition": "top",
+        "selector": "[aria-label=\"New\\ post\"]",
+        "style": "rectangle"
+    },
+    {
+        "color": "#ef4444",
+        "contextText": "",
+        "domain": "www.instagram.com",
+        "ensureVisible": false,
+        "excludedContextText": "",
+        "id": "mkc9nijk",
+        "label": "New Post",
+        "labelPosition": "top",
+        "selector": "a[href=\"\\#\"]:nth-of-type(1) > .html-div > .html-div > div > div:nth-of-type(2) > div > .html-div",
+        "style": "rectangle"
+    },
+    {
+        "color": "#10b981",
+        "contextText": "",
+        "domain": "www.instagram.com",
+        "ensureVisible": false,
+        "excludedContextText": "",
+        "id": "mkc9rpkr",
+        "label": "SUCCESFULL POST !",
+        "labelPosition": "bottom",
+        "selector": "h3",
         "style": "rectangle"
     }
 ]

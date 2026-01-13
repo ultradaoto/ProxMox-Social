@@ -337,3 +337,9 @@
 .osp-btn-primary:hover {
     background: #059669;
 }
+
+/* Truncated Highlight Indicator */
+.osp-highlight-truncated {
+    border-bottom: 2px dashed rgba(255, 255, 255, 0.5) !important;
+    background: linear-gradient(to bottom, rgba(16, 185, 129, 0.05) 80%, rgba(0, 0, 0, 0)) !important;
+}

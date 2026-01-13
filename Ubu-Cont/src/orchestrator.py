@@ -18,6 +18,7 @@ from src.vision_controller import VisionController
 from src.input_controller import InputController
 from src.workflows.async_base_workflow import WorkflowResult
 from src.workflows.skool_workflow import SkoolWorkflow
+from src.workflows.instagram_workflow import InstagramWorkflow
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -144,18 +145,39 @@ class BrainOrchestrator:
     
     def _initialize_workflows(self):
         """Initialize platform-specific workflows."""
+        workflow_config = self.config.get("workflow", self.config.get("workflows", {}))
+
+        # Skool workflow
         skool_workflow = SkoolWorkflow(
             vnc=self.vnc,
             vision=self.vision,
             input_injector=self.input
         )
-        
-        workflow_config = self.config.get("workflow", self.config.get("workflows", {}))
+        if self.screenshot_saver:
+            skool_workflow.set_screenshot_saver(self.screenshot_saver)
+
         skool_workflow.max_retries = workflow_config.get("max_retries", 3)
-        skool_workflow.step_timeout = workflow_config.get("step_timeout_seconds", workflow_config.get("step_timeout", 60))
-        
+        skool_workflow.step_timeout = workflow_config.get("step_timeout_seconds", workflow_config.get("step_timeout", 30))
+
         self.workflows[Platform.SKOOL] = skool_workflow
-        
+
+        # Instagram workflow
+        instagram_workflow = InstagramWorkflow(
+            vnc=self.vnc,
+            vision=self.vision,
+            input_injector=self.input
+        )
+        if self.screenshot_saver:
+            instagram_workflow.set_screenshot_saver(self.screenshot_saver)
+
+        instagram_workflow.max_retries = workflow_config.get("max_retries", 3)
+        instagram_workflow.step_timeout = workflow_config.get("step_timeout_seconds", workflow_config.get("step_timeout", 30))
+
+        self.workflows[Platform.INSTAGRAM] = instagram_workflow
+
+        # TODO: Add other platforms
+        # self.workflows[Platform.FACEBOOK] = FacebookWorkflow(...)
+        # self.workflows[Platform.TIKTOK] = TikTokWorkflow(...)
         logger.info(f"Initialized workflows for: {[p.value for p in self.workflows.keys()]}")
     
     async def shutdown(self):

@@ -24,6 +24,8 @@ class Platform(Enum):
     INSTAGRAM = "instagram"
     FACEBOOK = "facebook"
     TIKTOK = "tiktok"
+    TWITTER = "twitter"  # Future support
+    LINKEDIN = "linkedin"  # Future support
 
 
 @dataclass
