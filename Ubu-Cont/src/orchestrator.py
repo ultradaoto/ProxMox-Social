@@ -48,6 +48,9 @@ class BrainOrchestrator:
         # Workflows
         self.workflows: Dict[Platform, Any] = {}
         
+        # Screenshot saver (optional)
+        self.screenshot_saver = None
+        
         # State
         self.running = False
         self.current_post: Optional[PendingPost] = None
@@ -60,19 +63,26 @@ class BrainOrchestrator:
         # Initialize fetcher
         logger.info("Initializing fetcher...")
         api_config = self.config.get("api", {})
+        # Get API key from config or environment variable
+        api_key = api_config.get("api_key") or os.getenv("API_KEY", "")
+        api_base_url = api_config.get("base_url") or os.getenv("API_BASE_URL", "https://social.sterlingcooley.com/api")
+        
+        logger.info(f"API Base URL: {api_base_url}")
+        logger.info(f"API Key configured: {'Yes' if api_key else 'No'}")
+        
         self.fetcher = Fetcher(
-            api_base_url=api_config.get("base_url", "https://social.sterlingcooley.com/api"),
-            timeout=api_config.get("timeout_seconds", 10),
-            api_key=api_config.get("api_key", "")
+            api_base_url=api_base_url,
+            timeout=api_config.get("timeout_seconds", 30),
+            api_key=api_key
         )
         await self.fetcher.initialize()
         
         # Initialize reporter
         logger.info("Initializing reporter...")
         self.reporter = Reporter(
-            api_base_url=api_config.get("base_url", "https://social.sterlingcooley.com/api"),
-            timeout=api_config.get("timeout_seconds", 10),
-            api_key=api_config.get("api_key", "")
+            api_base_url=api_base_url,
+            timeout=api_config.get("timeout_seconds", 30),
+            api_key=api_key
         )
         await self.reporter.initialize()
         
@@ -157,7 +167,7 @@ class BrainOrchestrator:
             skool_workflow.set_screenshot_saver(self.screenshot_saver)
 
         skool_workflow.max_retries = workflow_config.get("max_retries", 3)
-        skool_workflow.step_timeout = workflow_config.get("step_timeout_seconds", workflow_config.get("step_timeout", 30))
+        skool_workflow.step_timeout = workflow_config.get("step_timeout_seconds", workflow_config.get("step_timeout", 120))  # 2 min timeout per step
 
         self.workflows[Platform.SKOOL] = skool_workflow
 
@@ -171,7 +181,7 @@ class BrainOrchestrator:
             instagram_workflow.set_screenshot_saver(self.screenshot_saver)
 
         instagram_workflow.max_retries = workflow_config.get("max_retries", 3)
-        instagram_workflow.step_timeout = workflow_config.get("step_timeout_seconds", workflow_config.get("step_timeout", 30))
+        instagram_workflow.step_timeout = workflow_config.get("step_timeout_seconds", workflow_config.get("step_timeout", 120))  # 2 min timeout per step
 
         self.workflows[Platform.INSTAGRAM] = instagram_workflow
 
@@ -218,19 +228,12 @@ class BrainOrchestrator:
         logger.info("Main loop ended")
     
     async def _process_post(self, post: PendingPost):
-        """Process a single post."""
+        """Process a single post by detecting platform from OSP."""
         logger.info("=" * 60)
-        logger.info(f"PROCESSING POST: {post.id}")
-        logger.info(f"Platform: {post.platform.value}")
-        logger.info(f"URL: {post.url}")
+        logger.info(f"API DETECTED POST: {post.id}")
+        logger.info(f"API says platform: {post.platform.value}")
+        logger.info("Will detect actual platform from OSP screen...")
         logger.info("=" * 60)
-        
-        # Wait for Windows 10 OSP GUI to download and display the post
-        # This prevents a race condition where we click before content is ready
-        osp_load_delay = 15  # seconds
-        logger.info(f"Waiting {osp_load_delay}s for Windows 10 OSP to load post content...")
-        await asyncio.sleep(osp_load_delay)
-        logger.info("OSP load delay complete, starting workflow...")
         
         self.current_post = post
         
@@ -238,25 +241,45 @@ class BrainOrchestrator:
             # Mark as processing
             await self.reporter.report_processing(post.id)
             
-            # Get workflow
-            workflow = self.workflows.get(post.platform)
-
-            if not workflow:
-                # Debug logging
-                logger.error(f"No workflow for platform: {post.platform}")
-                logger.error(f"Platform value: {post.platform.value}")
-                logger.error(f"Platform type: {type(post.platform)}")
-                logger.error(f"Available workflows: {list(self.workflows.keys())}")
-                logger.error(f"Available workflow values: {[p.value for p in self.workflows.keys()]}")
-
+            # STEP 1: Wait for OSP to be ready and detect platform from screen
+            detected_platform = await self._wait_for_osp_and_detect_platform()
+            
+            if not detected_platform:
+                logger.error("Could not detect platform from OSP after timeout")
                 await self.reporter.report_failure(
                     post.id,
-                    f"Unsupported platform: {post.platform.value}",
+                    "OSP not ready or platform not detected",
+                    step="osp_detection"
+                )
+                return
+            
+            logger.info(f"OSP shows platform: {detected_platform}")
+            
+            # STEP 2: Get the workflow for the DETECTED platform (not API platform)
+            workflow = None
+            if detected_platform == "SKOOL":
+                workflow = self.workflows.get(Platform.SKOOL)
+            elif detected_platform == "INSTAGRAM":
+                workflow = self.workflows.get(Platform.INSTAGRAM)
+            elif detected_platform == "FACEBOOK":
+                workflow = self.workflows.get(Platform.FACEBOOK)
+            
+            if not workflow:
+                logger.error(f"No workflow for detected platform: {detected_platform}")
+                await self.reporter.report_failure(
+                    post.id,
+                    f"No workflow for platform: {detected_platform}",
                     step="workflow_selection"
                 )
                 return
             
-            # Execute workflow
+            logger.info(f"Running {detected_platform} workflow...")
+            
+            # STEP 3: Execute workflow (skip the wait_for_osp_ready step since we already did it)
+            # We'll set a flag so the workflow knows OSP is already confirmed ready
+            workflow.set_step_data("osp_already_ready", True)
+            workflow.set_step_data("detected_platform", detected_platform)
+            
             result = await workflow.execute(post)
             
             # Report result
@@ -283,6 +306,66 @@ class BrainOrchestrator:
             )
         finally:
             self.current_post = None
+    
+    async def _wait_for_osp_and_detect_platform(self) -> Optional[str]:
+        """
+        Wait for OSP to be ready and detect which platform is loaded.
+        Returns: 'SKOOL', 'INSTAGRAM', 'FACEBOOK', or None if timeout
+        """
+        import asyncio
+        
+        max_attempts = 15  # Up to ~10 minutes
+        
+        for attempt in range(1, max_attempts + 1):
+            logger.info(f"Checking OSP for platform (attempt {attempt}/{max_attempts})...")
+            
+            await asyncio.sleep(3.0)  # Let screen settle
+            
+            try:
+                # Use vision controller to analyze the screen
+                result = await asyncio.to_thread(
+                    self.vision.analyze_screen,
+                    "Look at the OSP panel on the right side of the screen. "
+                    "Do you see RED text that says 'NO POSTS'? "
+                    "Or do you see a platform name in the upper right like 'SKOOL', 'INSTAGRAM', or 'FACEBOOK'? "
+                    "Answer 'NO_POSTS' if you see red 'NO POSTS' text. "
+                    "Answer 'SKOOL' if you see Skool. "
+                    "Answer 'INSTAGRAM' if you see Instagram. "
+                    "Answer 'FACEBOOK' if you see Facebook."
+                )
+                
+                result_upper = result.upper()
+                logger.info(f"OSP detection result: {result[:100]}...")
+                
+                # Check for platform indicators
+                if "SKOOL" in result_upper and "NO" not in result_upper:
+                    logger.info("Detected SKOOL on OSP!")
+                    return "SKOOL"
+                
+                if "INSTAGRAM" in result_upper and "NO" not in result_upper:
+                    logger.info("Detected INSTAGRAM on OSP!")
+                    return "INSTAGRAM"
+                
+                if "FACEBOOK" in result_upper and "NO" not in result_upper:
+                    logger.info("Detected FACEBOOK on OSP!")
+                    return "FACEBOOK"
+                
+                # If we see "NO POSTS", wait longer
+                if "NO_POSTS" in result_upper or "NO POSTS" in result_upper:
+                    logger.info(f"OSP shows 'NO POSTS' - waiting 45 seconds...")
+                    await asyncio.sleep(45)
+                    continue
+                
+                # Ambiguous - wait and try again
+                logger.info(f"OSP status unclear, waiting 30 seconds...")
+                await asyncio.sleep(30)
+                
+            except Exception as e:
+                logger.error(f"Error checking OSP: {e}")
+                await asyncio.sleep(10)
+        
+        logger.error(f"OSP detection timed out after {max_attempts} attempts")
+        return None
     
     async def run_single_post(self, post_id: str) -> Optional[WorkflowResult]:
         """Run a single post by ID (for testing)."""

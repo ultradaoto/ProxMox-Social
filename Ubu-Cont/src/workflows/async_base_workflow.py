@@ -110,7 +110,8 @@ class AsyncBaseWorkflow(ABC):
         logger.info("=" * 60)
         logger.info(f"Starting {self.platform_name} workflow for post {post.id}")
         logger.info(f"URL: {post.url}")
-        logger.info(f"Title: {post.title[:50]}..." if len(post.title) > 50 else f"Title: {post.title}")
+        title = post.title or "(no title)"
+        logger.info(f"Title: {title[:50]}..." if len(title) > 50 else f"Title: {title}")
         logger.info("=" * 60)
         
         try:

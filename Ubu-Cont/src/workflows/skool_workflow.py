@@ -25,6 +25,7 @@ class SkoolWorkflow(AsyncBaseWorkflow):
     @property
     def steps(self) -> List[str]:
         return [
+            "wait_for_osp_ready",           # Step 0: Wait until OSP shows post is ready
             "click_osp_open_url",
             "wait_for_skool_page",
             "click_start_post",
@@ -40,7 +41,8 @@ class SkoolWorkflow(AsyncBaseWorkflow):
             "click_osp_post",
             "click_skool_post_button",
             "verify_post_success",
-            "click_success_or_fail"
+            "click_success_or_fail",
+            "cleanup_close_tab"             # Final: Close Chrome tab with Ctrl+W
         ]
     
     async def _find_and_click(self, description: str, pre_delay: float = 1.0) -> Optional[Tuple[int, int]]:
@@ -107,8 +109,50 @@ class SkoolWorkflow(AsyncBaseWorkflow):
     async def _execute_step(self, step_name: str) -> StepResult:
         """Execute a single workflow step."""
         
+        # ==================== STEP 0: WAIT FOR OSP READY ====================
+        if step_name == "wait_for_osp_ready":
+            # Check if orchestrator already detected OSP is ready
+            if self.get_step_data("osp_already_ready", False):
+                detected = self.get_step_data("detected_platform", "UNKNOWN")
+                logger.info(f"OSP already confirmed ready by orchestrator (platform: {detected})")
+                return StepResult(StepStatus.SUCCESS, f"OSP ready - {detected} (pre-detected)")
+            
+            # Otherwise do the check ourselves (fallback)
+            logger.info("Waiting for OSP to load the post...")
+            
+            max_attempts = 10
+            
+            for attempt in range(1, max_attempts + 1):
+                logger.info(f"Checking OSP status (attempt {attempt}/{max_attempts})...")
+                
+                await asyncio.sleep(3.0)
+                
+                result = await self._analyze_screen(
+                    "Look at the OSP panel on the right side. "
+                    "Do you see 'NO POSTS' in red, or a platform name like 'SKOOL' or 'INSTAGRAM'? "
+                    "Answer NO_POSTS, SKOOL, or INSTAGRAM."
+                )
+                
+                result_upper = result.upper()
+                logger.info(f"OSP check: {result[:80]}...")
+                
+                if "SKOOL" in result_upper and "NO" not in result_upper:
+                    return StepResult(StepStatus.SUCCESS, "OSP ready - SKOOL")
+                
+                if "INSTAGRAM" in result_upper and "NO" not in result_upper:
+                    return StepResult(StepStatus.SUCCESS, "OSP ready - INSTAGRAM")
+                
+                if "NO_POSTS" in result_upper or "NO POSTS" in result_upper:
+                    logger.info("OSP shows 'NO POSTS' - waiting 45s...")
+                    await asyncio.sleep(45)
+                    continue
+                
+                await asyncio.sleep(30)
+            
+            return StepResult(StepStatus.FAILED, "OSP not ready after timeout")
+        
         # ==================== STEP 1: OPEN URL ====================
-        if step_name == "click_osp_open_url":
+        elif step_name == "click_osp_open_url":
             logger.info("Looking for OPEN URL button on OSP...")
             
             # Give 2 seconds for screen to be ready
@@ -398,6 +442,32 @@ class SkoolWorkflow(AsyncBaseWorkflow):
                 return StepResult(StepStatus.SUCCESS, f"Reported {'success' if post_successful else 'failure'}")
             
             return StepResult(StepStatus.FAILED, f"{'SUCCESS' if post_successful else 'FAILED'} button not found")
+        
+        # ==================== STEP 17: CLEANUP - CLOSE CHROME TAB ====================
+        elif step_name == "cleanup_close_tab":
+            logger.info("Cleanup: Closing Chrome tab...")
+            
+            # Click in the middle of the web screen area (left side, not OSP)
+            # This ensures Chrome has focus before sending Ctrl+W
+            await asyncio.sleep(1.0)
+            
+            # Click roughly in the center-left of the screen (web content area)
+            screen_center_x = 600  # Left of center to avoid OSP panel
+            screen_center_y = 500
+            
+            logger.info(f"Clicking in web area at ({screen_center_x}, {screen_center_y}) to focus Chrome...")
+            await asyncio.to_thread(self.input.move_to, screen_center_x, screen_center_y)
+            await asyncio.sleep(0.3)
+            await asyncio.to_thread(self.input.click, 'left')
+            await asyncio.sleep(0.5)
+            
+            # Send Ctrl+W to close the current tab
+            logger.info("Sending Ctrl+W to close Chrome tab...")
+            await asyncio.to_thread(self.input.hotkey, 'ctrl', 'w')
+            await asyncio.sleep(1.0)
+            
+            logger.info("Chrome tab closed - cleanup complete")
+            return StepResult(StepStatus.SUCCESS, "Chrome tab closed")
         
         # Unknown step
         return StepResult(StepStatus.FAILED, f"Unknown step: {step_name}")
