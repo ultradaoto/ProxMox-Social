@@ -352,6 +352,19 @@
 
         if (isSafe) return; // Allow
 
+        // 4. HARDCODED WHITELIST FOR OSP/INSTAGRAM
+
+        // A. ALLOW FILE INPUTS (Critical for uploads)
+        if (e.target.tagName === 'INPUT' && e.target.type === 'file') {
+            return;
+        }
+
+        // B. Allow "Select from computer" button
+        const btn = e.target.closest('button, [role="button"], ._aswp');
+        if (btn && btn.innerText.includes('Select from computer')) {
+            return;
+        }
+
         // Otherwise, Block
         e.preventDefault();
         e.stopPropagation();

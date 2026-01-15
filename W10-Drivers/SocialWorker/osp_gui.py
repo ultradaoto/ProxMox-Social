@@ -726,6 +726,10 @@ class PrompterWindow(QMainWindow):
         # Button 4: COPY IMAGE (Blue)
         self.btn_copy_image = self._make_static_btn("COPY IMAGE", self.copy_image_data_action, "#3498db")
         layout.addWidget(self.btn_copy_image)
+
+        # Button 4b: COPY FILE LOCATION (Blue)
+        self.btn_copy_path = self._make_static_btn("COPY FILE LOCATION", self.copy_image_path_action, "#3498db")
+        layout.addWidget(self.btn_copy_path)
         
         # --- SEPARATOR ---
         sep1 = QFrame()
@@ -1379,6 +1383,12 @@ class PrompterWindow(QMainWindow):
         log_ws("UI: Open URL Button Clicked")
         
         job = self.queue.current_job
+        if job:
+            # DEBUG: Log potential URL sources
+            log_ws(f"DEBUG: platform_url={job.data.get('platform_url')}")
+            log_ws(f"DEBUG: options={job.data.get('options')}")
+            log_ws(f"DEBUG: link={job.data.get('link')}")
+            
         if job and job.link:
             # Try WebSocket first (Chrome extension), fall back to system browser
             self.ws_server.send("open_url", {"url": job.link})
@@ -1455,7 +1465,9 @@ class PrompterWindow(QMainWindow):
     def refresh_queue(self):
         count = self.queue.refresh()
         self.count_label.setText(f"Queue: {self.queue.current_index + 1}/{count}" if count > 0 else "Queue: 0")
-        if count > 0 and self.platform_label.text() == "Platform: ---":
+        # Update if we have jobs but show "NO POSTS" (or generic empty state)
+        current_text = self.platform_label.text()
+        if count > 0 and (current_text == "Platform: ---" or "NO POSTS" in current_text):
             self.update_display()
         if count == 0:
             self.update_display()
