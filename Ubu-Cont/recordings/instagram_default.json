@@ -1,0 +1,231 @@
+{
+  "platform": "instagram",
+  "created": "2026-01-14T12:00:00Z",
+  "resolution": "1600x1200",
+  "description": "Instagram posting workflow - extracted from instagram_workflow.py",
+  "notes": "Uses OSP panel on right side. Coordinates may need adjustment based on your screen layout.",
+  "osp_buttons": {
+    "OPEN_URL": [1475, 270],
+    "COPY_FILE_LOCATION": [1475, 505],
+    "COPY_BODY": [1482, 386],
+    "SUCCESS": [1416, 785],
+    "FAILED": [1534, 785]
+  },
+  "actions": [
+    {
+      "type": "click",
+      "x": 1475,
+      "y": 270,
+      "delay_before_ms": 1000,
+      "description": "Click OPEN URL on OSP panel"
+    },
+    {
+      "type": "wait",
+      "delay_ms": 5000,
+      "description": "Wait for Instagram page to load"
+    },
+    {
+      "type": "click",
+      "x": 125,
+      "y": 450,
+      "delay_before_ms": 2000,
+      "description": "Click Create Post (+) button in Instagram sidebar (LEFT side, X < 200)"
+    },
+    {
+      "type": "wait",
+      "delay_ms": 2000,
+      "description": "Wait for Create menu to appear"
+    },
+    {
+      "type": "click",
+      "x": 200,
+      "y": 350,
+      "delay_before_ms": 1500,
+      "description": "Click 'Post' option in menu (LEFT side, X < 400)"
+    },
+    {
+      "type": "wait",
+      "delay_ms": 2000,
+      "description": "Wait for upload dialog"
+    },
+    {
+      "type": "click",
+      "x": 550,
+      "y": 500,
+      "delay_before_ms": 1500,
+      "description": "Click 'Select from computer' button (CENTER)"
+    },
+    {
+      "type": "wait",
+      "delay_ms": 2500,
+      "description": "Wait for File Explorer to open"
+    },
+    {
+      "type": "click",
+      "x": 1475,
+      "y": 505,
+      "delay_before_ms": 1000,
+      "description": "Click COPY FILE LOCATION on OSP panel"
+    },
+    {
+      "type": "wait",
+      "delay_ms": 1000,
+      "description": "Wait for clipboard"
+    },
+    {
+      "type": "click",
+      "x": 600,
+      "y": 570,
+      "delay_before_ms": 1500,
+      "description": "Click File name text box in File Explorer (CENTER)"
+    },
+    {
+      "type": "key",
+      "key": "a",
+      "ctrl": true,
+      "delay_before_ms": 300,
+      "description": "Select all in file name box"
+    },
+    {
+      "type": "key",
+      "key": "v",
+      "ctrl": true,
+      "delay_before_ms": 300,
+      "description": "Paste file path"
+    },
+    {
+      "type": "wait",
+      "delay_ms": 1000,
+      "description": "Wait for path to paste"
+    },
+    {
+      "type": "click",
+      "x": 633,
+      "y": 596,
+      "delay_before_ms": 1000,
+      "description": "Click Open button in File Explorer"
+    },
+    {
+      "type": "wait",
+      "delay_ms": 5000,
+      "description": "Wait for image to upload (increase for videos)"
+    },
+    {
+      "type": "click",
+      "x": 283,
+      "y": 1033,
+      "delay_before_ms": 2500,
+      "description": "Click resize/crop icon (inside RED BOX)"
+    },
+    {
+      "type": "wait",
+      "delay_ms": 1500,
+      "description": "Wait for aspect ratio menu"
+    },
+    {
+      "type": "click",
+      "x": 300,
+      "y": 900,
+      "delay_before_ms": 1000,
+      "description": "Click 4:5 aspect ratio option"
+    },
+    {
+      "type": "wait",
+      "delay_ms": 1500,
+      "description": "Wait for resize to apply"
+    },
+    {
+      "type": "click",
+      "x": 1061,
+      "y": 196,
+      "delay_before_ms": 1000,
+      "description": "Click first Next button"
+    },
+    {
+      "type": "wait",
+      "delay_ms": 15000,
+      "description": "CRITICAL: Wait 15 seconds for page to expand after Next"
+    },
+    {
+      "type": "click",
+      "x": 1240,
+      "y": 197,
+      "delay_before_ms": 500,
+      "description": "Click second Next button"
+    },
+    {
+      "type": "wait",
+      "delay_ms": 2000,
+      "description": "Wait for caption screen"
+    },
+    {
+      "type": "click",
+      "x": 1482,
+      "y": 386,
+      "delay_before_ms": 2000,
+      "description": "Click COPY BODY on OSP panel"
+    },
+    {
+      "type": "wait",
+      "delay_ms": 10000,
+      "description": "CRITICAL: Wait 10 seconds before clicking caption area"
+    },
+    {
+      "type": "click",
+      "x": 600,
+      "y": 600,
+      "delay_before_ms": 1500,
+      "description": "Click caption text area (use vision to find exact position)"
+    },
+    {
+      "type": "key",
+      "key": "v",
+      "ctrl": true,
+      "delay_before_ms": 500,
+      "description": "Paste caption"
+    },
+    {
+      "type": "wait",
+      "delay_ms": 2000,
+      "description": "Wait for caption to paste"
+    },
+    {
+      "type": "click",
+      "x": 1234,
+      "y": 199,
+      "delay_before_ms": 2000,
+      "description": "Click Share button"
+    },
+    {
+      "type": "wait",
+      "delay_ms": 6000,
+      "description": "Wait for post to complete"
+    },
+    {
+      "type": "click",
+      "x": 1416,
+      "y": 785,
+      "delay_before_ms": 3000,
+      "description": "Click SUCCESS on OSP panel"
+    },
+    {
+      "type": "wait",
+      "delay_ms": 1000,
+      "description": "Wait before cleanup"
+    },
+    {
+      "type": "click",
+      "x": 500,
+      "y": 400,
+      "delay_before_ms": 500,
+      "description": "Click in Chrome area to focus"
+    },
+    {
+      "type": "key",
+      "key": "w",
+      "ctrl": true,
+      "delay_before_ms": 500,
+      "description": "Close Chrome tab with Ctrl+W"
+    }
+  ]
+}

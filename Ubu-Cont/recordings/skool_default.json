@@ -1,0 +1,176 @@
+{
+  "platform": "skool",
+  "created": "2026-01-14T12:00:00Z",
+  "resolution": "1600x1200",
+  "description": "Skool posting workflow - extracted from skool_workflow.py",
+  "notes": "Uses OSP panel on right side. Skool uses vision-based finding for most elements.",
+  "actions": [
+    {
+      "type": "click",
+      "x": 1475,
+      "y": 270,
+      "delay_before_ms": 2000,
+      "description": "Click OPEN URL button on OSP panel"
+    },
+    {
+      "type": "wait",
+      "delay_ms": 6000,
+      "description": "Wait for Skool page to load"
+    },
+    {
+      "type": "click",
+      "x": 500,
+      "y": 300,
+      "delay_before_ms": 2000,
+      "description": "Click 'Start a post' or 'Write something' area (use vision)"
+    },
+    {
+      "type": "wait",
+      "delay_ms": 3000,
+      "description": "Wait for post dialog to open"
+    },
+    {
+      "type": "click",
+      "x": 1475,
+      "y": 320,
+      "delay_before_ms": 1500,
+      "description": "Click COPY TITLE on OSP panel"
+    },
+    {
+      "type": "wait",
+      "delay_ms": 1000,
+      "description": "Wait for clipboard"
+    },
+    {
+      "type": "click",
+      "x": 500,
+      "y": 250,
+      "delay_before_ms": 1500,
+      "description": "Click title input field"
+    },
+    {
+      "type": "key",
+      "key": "v",
+      "ctrl": true,
+      "delay_before_ms": 500,
+      "description": "Paste title"
+    },
+    {
+      "type": "wait",
+      "delay_ms": 1000,
+      "description": "Wait for title to paste"
+    },
+    {
+      "type": "click",
+      "x": 1475,
+      "y": 388,
+      "delay_before_ms": 1500,
+      "description": "Click COPY BODY on OSP panel"
+    },
+    {
+      "type": "wait",
+      "delay_ms": 1000,
+      "description": "Wait for clipboard"
+    },
+    {
+      "type": "click",
+      "x": 500,
+      "y": 400,
+      "delay_before_ms": 1500,
+      "description": "Click body/content area (RED label: 'Click here & Paste Body')"
+    },
+    {
+      "type": "key",
+      "key": "v",
+      "ctrl": true,
+      "delay_before_ms": 500,
+      "description": "Paste body content"
+    },
+    {
+      "type": "wait",
+      "delay_ms": 1000,
+      "description": "Wait for body to paste"
+    },
+    {
+      "type": "click",
+      "x": 1475,
+      "y": 450,
+      "delay_before_ms": 1500,
+      "description": "Click COPY IMAGE on OSP panel (optional)"
+    },
+    {
+      "type": "wait",
+      "delay_ms": 2000,
+      "description": "Wait for image to copy to clipboard"
+    },
+    {
+      "type": "click",
+      "x": 500,
+      "y": 400,
+      "delay_before_ms": 1500,
+      "description": "Click same body area for image paste"
+    },
+    {
+      "type": "key",
+      "key": "v",
+      "ctrl": true,
+      "delay_before_ms": 500,
+      "description": "Paste image"
+    },
+    {
+      "type": "wait",
+      "delay_ms": 4000,
+      "description": "Wait for image upload"
+    },
+    {
+      "type": "click",
+      "x": 1475,
+      "y": 600,
+      "delay_before_ms": 2000,
+      "description": "Click POST button on OSP panel (orange)"
+    },
+    {
+      "type": "wait",
+      "delay_ms": 1000,
+      "description": "Wait for OSP to trigger"
+    },
+    {
+      "type": "click",
+      "x": 700,
+      "y": 700,
+      "delay_before_ms": 2000,
+      "description": "Click Skool's Post/Submit button in dialog"
+    },
+    {
+      "type": "wait",
+      "delay_ms": 5000,
+      "description": "Wait for post to submit"
+    },
+    {
+      "type": "click",
+      "x": 1416,
+      "y": 785,
+      "delay_before_ms": 2000,
+      "description": "Click SUCCESS on OSP panel (green)"
+    },
+    {
+      "type": "wait",
+      "delay_ms": 1000,
+      "description": "Wait before cleanup"
+    },
+    {
+      "type": "click",
+      "x": 600,
+      "y": 500,
+      "delay_before_ms": 1000,
+      "description": "Click in Chrome area to focus"
+    },
+    {
+      "type": "key",
+      "key": "w",
+      "ctrl": true,
+      "delay_before_ms": 500,
+      "description": "Close Chrome tab with Ctrl+W"
+    }
+  ]
+}
