@@ -108,7 +108,9 @@ class Fetcher:
     
     async def initialize(self):
         """Initialize HTTP session."""
-        headers = {}
+        headers = {
+            'Content-Type': 'application/json',
+        }
         if self.api_key:
             headers['X-API-Key'] = self.api_key
         
@@ -117,6 +119,7 @@ class Fetcher:
             headers=headers
         )
         logger.info(f"Fetcher initialized with API: {self.api_base_url}")
+        logger.info(f"Using API key: {self.api_key[:20]}..." if self.api_key else "No API key set")
     
     async def shutdown(self):
         """Close HTTP session."""
@@ -131,21 +134,37 @@ class Fetcher:
         Returns:
             PendingPost if one is available, None otherwise
         """
+        url = f"{self.api_base_url}/queue/gui/pending"
+        logger.info(f"[FETCHER] Polling: {url}")
+        
         try:
-            async with self.session.get(
-                f"{self.api_base_url}/queue/gui/pending"
-            ) as response:
+            async with self.session.get(url) as response:
+                logger.info(f"[FETCHER] Response status: {response.status}")
                 
                 if response.status == 200:
-                    data = await response.json()
+                    raw_text = await response.text()
+                    logger.info(f"[FETCHER] Raw response: {raw_text[:500]}")
+                    
+                    import json
+                    data = json.loads(raw_text)
+                    logger.info(f"[FETCHER] Parsed {len(data)} posts from API")
                     
                     if data and len(data) > 0:
-                        post = PendingPost.from_api_response(data[0])
+                        # Log first post details
+                        first = data[0]
+                        logger.info(f"[FETCHER] First post keys: {list(first.keys())}")
+                        logger.info(f"[FETCHER] First post id: {first.get('id')}")
+                        logger.info(f"[FETCHER] First post platform: {first.get('platform')}")
+                        
+                        post = PendingPost.from_api_response(first)
                         logger.info(f"Found pending post: {post.id} for {post.platform.value}")
                         return post
+                    else:
+                        logger.info("[FETCHER] API returned empty array []")
                     
                 elif response.status != 404:
-                    logger.warning(f"API returned status {response.status}")
+                    body = await response.text()
+                    logger.warning(f"API returned status {response.status}: {body[:200]}")
                     
         except aiohttp.ClientError as e:
             logger.error(f"API connection error: {e}")
