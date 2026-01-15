@@ -60,8 +60,8 @@ class InstagramWorkflow(AsyncBaseWorkflow):
             "paste_caption",                # 16: Ctrl+V to paste caption
             "click_share_button",           # 17: Click Share (LEFT side)
             "verify_post_success",          # 18: Check if posted
-            # "click_success_or_fail",      # COMMENTED OUT FOR TESTING
-            "cleanup_close_tab"             # 19: Close Chrome tab
+            "click_success_or_fail",        # 19: Click SUCCESS on OSP
+            "cleanup_close_tab"             # 20: Close Chrome tab
         ]
     
     async def _find_and_click(self, description: str, pre_delay: float = 1.0, expected_x_range: Tuple[int, int] = None) -> Optional[Tuple[int, int]]:
@@ -228,24 +228,46 @@ class InstagramWorkflow(AsyncBaseWorkflow):
             await asyncio.sleep(1.0)
             return StepResult(StepStatus.SUCCESS, "File path pasted")
         
-        # ==================== STEP 9: CLICK OPEN BUTTON (FILE EXPLORER - CENTER) ====================
+        # ==================== STEP 9: CLICK OPEN BUTTON (FILE EXPLORER - WITH VERIFICATION) ====================
         elif step_name == "click_open_button":
-            logger.info("Looking for Open button (CENTER-RIGHT of File Explorer)...")
-            coords = await self._find_and_click(
-                "Find the 'Open' button at the bottom right of the Windows File Explorer dialog. Click this button to upload the selected file.",
-                pre_delay=1.0,
-                expected_x_range=(600, 1100)
-            )
-            if coords:
-                await asyncio.sleep(4.0)  # Wait for image upload
-                return StepResult(StepStatus.SUCCESS, "Clicked Open, image uploading")
-            return StepResult(StepStatus.FAILED, "Open button not found")
+            # Try hardcoded position first, then verify, then fallback to vision
+            for attempt in range(3):
+                if attempt == 0:
+                    # First attempt: hardcoded position
+                    logger.info("Attempt 1: Clicking Open button at hardcoded position (633, 596)...")
+                    await self._click_at(633, 596, pre_delay=1.0)
+                else:
+                    # Subsequent attempts: use vision to find the button
+                    logger.info(f"Attempt {attempt+1}: Using vision to find Open button...")
+                    coords = await self._find_and_click(
+                        "Find the 'Open' button in the Windows File Explorer dialog. It is on the LEFT side of the bottom row of buttons (Cancel is on the right). Click the Open button.",
+                        pre_delay=1.0,
+                        expected_x_range=(500, 750)
+                    )
+                    if not coords:
+                        logger.warning("Vision couldn't find Open button")
+                        continue
+                
+                # Verify: File Explorer should be gone, Instagram image editor should appear
+                await asyncio.sleep(3.0)
+                result = await self._analyze_screen(
+                    "Is the Windows File Explorer dialog still open? Answer YES if you see File Explorer, NO if you see Instagram's image editor."
+                )
+                
+                if "NO" in result.upper() or "INSTAGRAM" in result.upper():
+                    logger.info("File Explorer closed - image uploaded successfully")
+                    await asyncio.sleep(1.0)
+                    return StepResult(StepStatus.SUCCESS, "Clicked Open, image uploaded")
+                else:
+                    logger.warning(f"File Explorer still open after attempt {attempt+1}")
+            
+            return StepResult(StepStatus.FAILED, "Could not click Open button after 3 attempts")
         
         # ==================== STEP 10: CLICK RESIZE ICON (INSTAGRAM - LEFT SIDE) ====================
         elif step_name == "click_resize_icon":
-            logger.info("Looking for resize/crop icon (LEFT side, lower left of image)...")
+            logger.info("Looking for resize/crop icon inside RED BOX...")
             coords = await self._find_and_click(
-                "The image is now loaded in Instagram's editor. Find the resize/crop icon in the LOWER LEFT corner of the image area. It may have a RED box around it with a 'RESIZE' tag. The icon looks like two corners or a crop symbol.",
+                "Find the text label 'RESIZE' in the lower left area. Directly BELOW that label is a small RED BOX containing an icon. Click inside the CENTER of the RED BOX (not the RESIZE text label above it). The RED BOX should be around coordinates (283, 1033).",
                 pre_delay=2.5,
                 expected_x_range=(100, 500)
             )
@@ -267,46 +289,44 @@ class InstagramWorkflow(AsyncBaseWorkflow):
                 return StepResult(StepStatus.SUCCESS, f"Selected 4:5 ratio at {coords}")
             return StepResult(StepStatus.FAILED, "4:5 ratio option not found")
         
-        # ==================== STEP 12: CLICK NEXT BUTTON 1 (INSTAGRAM - LEFT SIDE) ====================
+        # ==================== STEP 12: CLICK NEXT BUTTON 1 (HARDCODED) ====================
         elif step_name == "click_next_button_1":
-            logger.info("Looking for first Next button inside BLUE RECTANGLE...")
-            coords = await self._find_and_click(
-                "Find the BLUE RECTANGLE that contains the word 'Next'. There is a tag above it that says 'NEXT BUTTON'. Click inside the CENTER of the BLUE RECTANGLE. This is on the LEFT side of the screen in the Instagram editor.",
-                pre_delay=1.5,
-                expected_x_range=(400, 850)
-            )
-            if coords:
-                await asyncio.sleep(2.0)
-                return StepResult(StepStatus.SUCCESS, f"Clicked Next (1) at {coords}")
-            return StepResult(StepStatus.FAILED, "First Next button not found")
+            # Hardcoded position: (1061, 196) - first Next button after resize
+            # Click after 1 second delay (4:5 was just clicked)
+            logger.info("Clicking first Next button at hardcoded position (1061, 196)...")
+            coords = await self._click_at(1061, 196, pre_delay=1.0)
+            # IMPORTANT: Wait 15 seconds for page to expand/resize after clicking Next
+            logger.info("Waiting 15 seconds for page to expand after clicking Next...")
+            await asyncio.sleep(15.0)
+            return StepResult(StepStatus.SUCCESS, f"Clicked Next (1) at {coords}")
         
-        # ==================== STEP 13: CLICK NEXT BUTTON 2 (INSTAGRAM - LEFT SIDE) ====================
+        # ==================== STEP 13: CLICK NEXT BUTTON 2 (HARDCODED) ====================
         elif step_name == "click_next_button_2":
-            logger.info("Looking for second Next button inside BLUE RECTANGLE...")
-            coords = await self._find_and_click(
-                "Find the BLUE RECTANGLE that contains the word 'Next'. There is a tag above it that says 'NEXT BUTTON'. Click inside the CENTER of the BLUE RECTANGLE. This is on the LEFT side of the screen.",
-                pre_delay=1.5,
-                expected_x_range=(400, 850)
-            )
-            if coords:
-                await asyncio.sleep(2.0)
-                return StepResult(StepStatus.SUCCESS, f"Clicked Next (2) at {coords}")
-            return StepResult(StepStatus.FAILED, "Second Next button not found")
+            # Hardcoded position: (1240, 197) - second Next button
+            logger.info("Clicking second Next button at hardcoded position (1240, 197)...")
+            coords = await self._click_at(1240, 197, pre_delay=0.5)
+            await asyncio.sleep(2.0)
+            return StepResult(StepStatus.SUCCESS, f"Clicked Next (2) at {coords}")
         
-        # ==================== STEP 14: CLICK COPY BODY (OSP - RIGHT SIDE) ====================
+        # ==================== STEP 14: CLICK COPY BODY (OSP - HARDCODED) ====================
         elif step_name == "click_osp_copy_body":
-            logger.info(f"Clicking COPY BODY at hardcoded position {self.OSP_COPY_BODY}...")
-            coords = await self._click_at(*self.OSP_COPY_BODY, pre_delay=1.0)
-            await asyncio.sleep(1.0)
+            # Hardcoded position: (1482, 386) - OSP panel doesn't move
+            logger.info("Clicking COPY BODY at hardcoded position (1482, 386)...")
+            coords = await self._click_at(1482, 386, pre_delay=2.0)
+            logger.info("Body text should now be in clipboard")
+            # CRITICAL: Wait 10 seconds before clicking caption area
+            logger.info("Waiting 10 seconds before clicking caption area...")
+            await asyncio.sleep(10.0)
             return StepResult(StepStatus.SUCCESS, f"Copied body text to clipboard at {coords}")
         
-        # ==================== STEP 15: CLICK CAPTION AREA (INSTAGRAM - LEFT SIDE) ====================
+        # ==================== STEP 15: CLICK CAPTION AREA (USE VISION) ====================
         elif step_name == "click_caption_area":
-            logger.info("Looking for caption text area (Instagram, LEFT side)...")
+            # Use vision to find the caption area - position changes after window expands
+            logger.info("Looking for caption text area with vision...")
             coords = await self._find_and_click(
-                "Find the caption input area on Instagram where you write the post description. It may say 'Write a caption...' or have a RED box with 'Click here and Paste BODY' from the OSP overlay. This is on the LEFT side of the screen.",
+                "Find the caption/text input area on Instagram where you write the post description. It may say 'Write a caption...' or be a text input field. Look for a RED box overlay with text 'PASTE BODY' if present. Click inside this text area.",
                 pre_delay=1.5,
-                expected_x_range=(100, 700)
+                expected_x_range=(100, 1200)
             )
             if coords:
                 await asyncio.sleep(0.5)
@@ -317,21 +337,17 @@ class InstagramWorkflow(AsyncBaseWorkflow):
         elif step_name == "paste_caption":
             logger.info("Pasting caption with Ctrl+V...")
             await asyncio.to_thread(self.input.hotkey, 'ctrl', 'v')
-            await asyncio.sleep(1.0)
+            await asyncio.sleep(2.0)
+            logger.info("Caption text pasted")
             return StepResult(StepStatus.SUCCESS, "Caption pasted")
         
-        # ==================== STEP 17: CLICK SHARE BUTTON (INSTAGRAM - LEFT SIDE) ====================
+        # ==================== STEP 17: CLICK SHARE BUTTON (HARDCODED) ====================
         elif step_name == "click_share_button":
-            logger.info("Looking for Share button (Instagram, upper right of popup)...")
-            coords = await self._find_and_click(
-                "Find the 'Share' button to publish the post. It should be in the upper right of the Instagram popup (NOT the OSP panel). It may have a BLUE box around it.",
-                pre_delay=2.0,
-                expected_x_range=(400, 850)
-            )
-            if coords:
-                await asyncio.sleep(6.0)  # Wait for post to complete
-                return StepResult(StepStatus.SUCCESS, f"Clicked Share at {coords}")
-            return StepResult(StepStatus.FAILED, "Share button not found")
+            # Hardcoded position: (1234, 199) - Share button
+            logger.info("Clicking Share button at hardcoded position (1234, 199)...")
+            coords = await self._click_at(1234, 199, pre_delay=2.0)
+            await asyncio.sleep(6.0)  # Wait for post to complete
+            return StepResult(StepStatus.SUCCESS, f"Clicked Share at {coords}")
         
         # ==================== STEP 18: VERIFY POST SUCCESS ====================
         elif step_name == "verify_post_success":
