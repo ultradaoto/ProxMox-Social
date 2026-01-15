@@ -19,6 +19,8 @@ import asyncio
 from typing import List, Optional, Tuple
 
 from src.workflows.async_base_workflow import AsyncBaseWorkflow, StepResult, StepStatus
+from src.subsystems.coordinate_store import CoordinateStore
+from src.subsystems.self_healer import SelfHealer
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -33,7 +35,27 @@ class InstagramWorkflow(AsyncBaseWorkflow):
     OSP_COPY_BODY = (1475, 388)
     OSP_SUCCESS = (1416, 785)
     OSP_FAILED = (1534, 785)
-    
+
+    def __init__(self, vnc, vision, input_injector):
+        """Initialize Instagram workflow with self-healing capabilities."""
+        super().__init__(vnc, vision, input_injector)
+
+        # Initialize coordinate store and self-healer
+        self.coord_store = CoordinateStore(
+            storage_path="data/coordinates/instagram.json",
+            platform="instagram"
+        )
+        self.healer = SelfHealer(
+            vnc_capture=vnc,
+            vision_controller=vision,
+            healing_model="qwen/qwen-2.5-vl-72b-instruct"  # Use 2.5 for now (3.0 not yet available)
+        )
+
+        # Bootstrap coordinates on first run
+        if not self.coord_store.exists():
+            logger.info("First run detected - bootstrapping coordinate store")
+            self._bootstrap_coordinates()
+
     @property
     def platform_name(self) -> str:
         return "Instagram"
@@ -117,7 +139,150 @@ class InstagramWorkflow(AsyncBaseWorkflow):
         except Exception as e:
             logger.warning(f"Screen analysis failed: {e}")
             return ""
-    
+
+    def _bootstrap_coordinates(self) -> None:
+        """Bootstrap coordinate store with hardcoded OSP button coordinates."""
+        logger.info("Bootstrapping coordinate store with hardcoded values...")
+
+        # Add hardcoded OSP buttons (static - never change)
+        self.coord_store.add_coordinate(
+            "click_osp_open_url",
+            coords=self.OSP_OPEN_URL,
+            coord_type="static",
+            description="OSP OPEN URL button (right side)",
+            expected_x_range=(1400, 1550)
+        )
+        self.coord_store.add_coordinate(
+            "click_osp_copy_file_location",
+            coords=self.OSP_COPY_FILE_LOCATION,
+            coord_type="static",
+            description="OSP COPY FILE LOCATION button (right side)",
+            expected_x_range=(1400, 1550)
+        )
+        self.coord_store.add_coordinate(
+            "click_osp_copy_body",
+            coords=self.OSP_COPY_BODY,
+            coord_type="static",
+            description="OSP COPY BODY button (right side)",
+            expected_x_range=(1400, 1550)
+        )
+        self.coord_store.add_coordinate(
+            "click_success_or_fail_success",
+            coords=self.OSP_SUCCESS,
+            coord_type="static",
+            description="OSP SUCCESS button (right side)",
+            expected_x_range=(1400, 1550)
+        )
+        self.coord_store.add_coordinate(
+            "click_success_or_fail_failed",
+            coords=self.OSP_FAILED,
+            coord_type="static",
+            description="OSP FAILED button (right side)",
+            expected_x_range=(1500, 1600)
+        )
+
+        logger.info(f"Bootstrapped {len(self.coord_store.get_all_steps())} coordinates")
+
+    async def _find_and_click_with_healing(
+        self,
+        step_name: str,
+        description: str,
+        pre_delay: float = 1.0,
+        expected_x_range: Optional[Tuple[int, int]] = None
+    ) -> Optional[Tuple[int, int]]:
+        """
+        Enhanced click with self-healing capabilities.
+
+        Flow:
+        1. Check if healing needed (3 consecutive failures)
+        2. Try stored coordinates first (fast, accurate)
+        3. Fall back to vision if stored coords fail
+        4. Track success/failure for future healing
+
+        Args:
+            step_name: Name of the workflow step
+            description: Vision description of element (used for healing)
+            pre_delay: Delay before attempting click
+            expected_x_range: Expected X coordinate range for validation
+
+        Returns:
+            (x, y) tuple if successful, None if failed
+        """
+        await asyncio.sleep(pre_delay)
+
+        # STEP 1: Check if healing needed (3 consecutive failures)
+        if self.coord_store.should_heal(step_name):
+            logger.warning(f"🔧 Step '{step_name}' has 3 consecutive failures - triggering healing")
+            healing_result = await self.healer.heal_coordinates(
+                step_name=step_name,
+                element_description=description,
+                expected_x_range=expected_x_range,
+                current_coords=self.coord_store.get_coordinates(step_name)
+            )
+
+            if healing_result.success:
+                self.coord_store.update_coordinates(
+                    step_name,
+                    healing_result.new_coordinates,
+                    healing_context={
+                        "trigger": "3_consecutive_failures",
+                        "delta": healing_result.delta,
+                        "confidence": healing_result.confidence,
+                        "vision_model": "qwen/qwen-2.5-vl-72b-instruct"
+                    }
+                )
+                logger.info(f"✅ Healing successful - new coords: {healing_result.new_coordinates}")
+            else:
+                logger.error(f"❌ Healing failed: {healing_result.error_message}")
+
+        # STEP 2: Try stored coordinates first
+        stored_coords = self.coord_store.get_coordinates(step_name)
+        if stored_coords:
+            logger.info(f"📍 Using stored coordinates for '{step_name}': {stored_coords}")
+            try:
+                # Click at stored coordinates
+                await asyncio.to_thread(self.input.move_to, *stored_coords)
+                await asyncio.sleep(0.3)
+                await asyncio.to_thread(self.input.click, 'left')
+                await asyncio.sleep(0.5)
+
+                # Record success (resets consecutive failures)
+                self.coord_store.record_success(step_name, stored_coords)
+                logger.info(f"✅ Stored coordinates worked for '{step_name}'")
+                return stored_coords
+
+            except Exception as e:
+                logger.warning(f"⚠️ Stored coordinates failed: {e}")
+                should_heal = self.coord_store.record_failure(step_name)
+                if should_heal:
+                    logger.warning(f"Recorded failure #{self.coord_store.get_failure_count(step_name)}")
+
+        # STEP 3: Fallback to vision (standard model)
+        logger.info(f"👁️ Falling back to vision for '{step_name}'")
+        coords = await self._find_and_click(description, pre_delay=0.0, expected_x_range=expected_x_range)
+
+        if coords:
+            # Vision succeeded - update/create stored coordinates
+            self.coord_store.record_success(step_name, coords)
+
+            # If coordinates changed significantly, log it
+            if stored_coords:
+                delta_x = abs(coords[0] - stored_coords[0])
+                delta_y = abs(coords[1] - stored_coords[1])
+                if delta_x > 5 or delta_y > 5:
+                    logger.info(f"📊 Vision found different coords - updating store: {coords} (delta: {delta_x}, {delta_y})")
+                    self.coord_store.update_coordinates(
+                        step_name,
+                        coords,
+                        {"source": "vision_fallback", "delta": (delta_x, delta_y)}
+                    )
+
+            return coords
+        else:
+            # Vision also failed
+            self.coord_store.record_failure(step_name)
+            return None
+
     async def _execute_step(self, step_name: str) -> StepResult:
         """Execute a single workflow step."""
         
@@ -163,8 +328,9 @@ class InstagramWorkflow(AsyncBaseWorkflow):
         # ==================== STEP 3: CLICK CREATE POST (INSTAGRAM - LEFT SIDE) ====================
         elif step_name == "click_create_post":
             logger.info("Looking for Create Post button on Instagram (LEFT side, X < 200)...")
-            coords = await self._find_and_click(
-                "Find the 'Create' button with a plus (+) icon in Instagram's LEFT sidebar menu. It should be in the vertical menu on the far left of the screen. The button may have a GREEN box around it from the OSP overlay.",
+            coords = await self._find_and_click_with_healing(
+                step_name="click_create_post",
+                description="Find the 'Create' button with a plus (+) icon in Instagram's LEFT sidebar menu. It should be in the vertical menu on the far left of the screen. The button may have a GREEN box around it from the OSP overlay.",
                 pre_delay=2.0,
                 expected_x_range=(0, 250)
             )
@@ -176,8 +342,9 @@ class InstagramWorkflow(AsyncBaseWorkflow):
         # ==================== STEP 4: CLICK POST OPTION (INSTAGRAM - LEFT SIDE) ====================
         elif step_name == "click_post_option":
             logger.info("Looking for 'Post' option in popup menu (LEFT side)...")
-            coords = await self._find_and_click(
-                "A menu appeared after clicking Create. Find and click the option that says 'Post'. It may have a RED box around it from the OSP overlay. This is in a popup menu on the LEFT side of the screen.",
+            coords = await self._find_and_click_with_healing(
+                step_name="click_post_option",
+                description="A menu appeared after clicking Create. Find and click the option that says 'Post'. It may have a RED box around it from the OSP overlay. This is in a popup menu on the LEFT side of the screen.",
                 pre_delay=1.5,
                 expected_x_range=(0, 400)
             )
@@ -189,8 +356,9 @@ class InstagramWorkflow(AsyncBaseWorkflow):
         # ==================== STEP 5: CLICK SELECT FROM COMPUTER (INSTAGRAM - CENTER) ====================
         elif step_name == "click_select_from_computer":
             logger.info("Looking for 'Select from computer' button...")
-            coords = await self._find_and_click(
-                "A popup appeared for creating a new post. Find the button that says 'Select from computer'. It may have a BLUE box around it from the OSP overlay. This button opens the file browser.",
+            coords = await self._find_and_click_with_healing(
+                step_name="click_select_from_computer",
+                description="A popup appeared for creating a new post. Find the button that says 'Select from computer'. It may have a BLUE box around it from the OSP overlay. This button opens the file browser.",
                 pre_delay=1.5,
                 expected_x_range=(200, 900)
             )
@@ -209,8 +377,9 @@ class InstagramWorkflow(AsyncBaseWorkflow):
         # ==================== STEP 7: CLICK FILE NAME BOX (FILE EXPLORER - CENTER) ====================
         elif step_name == "click_file_name_box":
             logger.info("Looking for File name text box (CENTER, X 400-800)...")
-            coords = await self._find_and_click(
-                "Windows File Explorer is open. Find the text input box labeled 'File name:' at the bottom of the dialog. Click inside this text box.",
+            coords = await self._find_and_click_with_healing(
+                step_name="click_file_name_box",
+                description="Windows File Explorer is open. Find the text input box labeled 'File name:' at the bottom of the dialog. Click inside this text box.",
                 pre_delay=1.5,
                 expected_x_range=(300, 900)
             )
@@ -230,44 +399,47 @@ class InstagramWorkflow(AsyncBaseWorkflow):
         
         # ==================== STEP 9: CLICK OPEN BUTTON (FILE EXPLORER - WITH VERIFICATION) ====================
         elif step_name == "click_open_button":
-            # Try hardcoded position first, then verify, then fallback to vision
+            # Try with healing-aware click, but with special verification logic
+            # First attempt with hardcoded position, then fallback to vision with healing
             for attempt in range(3):
                 if attempt == 0:
                     # First attempt: hardcoded position
                     logger.info("Attempt 1: Clicking Open button at hardcoded position (633, 596)...")
                     await self._click_at(633, 596, pre_delay=1.0)
                 else:
-                    # Subsequent attempts: use vision to find the button
-                    logger.info(f"Attempt {attempt+1}: Using vision to find Open button...")
-                    coords = await self._find_and_click(
-                        "Find the 'Open' button in the Windows File Explorer dialog. It is on the LEFT side of the bottom row of buttons (Cancel is on the right). Click the Open button.",
+                    # Subsequent attempts: use healing-aware vision
+                    logger.info(f"Attempt {attempt+1}: Using healing-aware vision to find Open button...")
+                    coords = await self._find_and_click_with_healing(
+                        step_name="click_open_button",
+                        description="Find the 'Open' button in the Windows File Explorer dialog. It is on the LEFT side of the bottom row of buttons (Cancel is on the right). Click the Open button.",
                         pre_delay=1.0,
                         expected_x_range=(500, 750)
                     )
                     if not coords:
-                        logger.warning("Vision couldn't find Open button")
+                        logger.warning("Healing-aware vision couldn't find Open button")
                         continue
-                
+
                 # Verify: File Explorer should be gone, Instagram image editor should appear
                 await asyncio.sleep(3.0)
                 result = await self._analyze_screen(
                     "Is the Windows File Explorer dialog still open? Answer YES if you see File Explorer, NO if you see Instagram's image editor."
                 )
-                
+
                 if "NO" in result.upper() or "INSTAGRAM" in result.upper():
                     logger.info("File Explorer closed - image uploaded successfully")
                     await asyncio.sleep(1.0)
                     return StepResult(StepStatus.SUCCESS, "Clicked Open, image uploaded")
                 else:
                     logger.warning(f"File Explorer still open after attempt {attempt+1}")
-            
+
             return StepResult(StepStatus.FAILED, "Could not click Open button after 3 attempts")
         
         # ==================== STEP 10: CLICK RESIZE ICON (INSTAGRAM - LEFT SIDE) ====================
         elif step_name == "click_resize_icon":
             logger.info("Looking for resize/crop icon inside RED BOX...")
-            coords = await self._find_and_click(
-                "Find the text label 'RESIZE' in the lower left area. Directly BELOW that label is a small RED BOX containing an icon. Click inside the CENTER of the RED BOX (not the RESIZE text label above it). The RED BOX should be around coordinates (283, 1033).",
+            coords = await self._find_and_click_with_healing(
+                step_name="click_resize_icon",
+                description="Find the text label 'RESIZE' in the lower left area. Directly BELOW that label is a small RED BOX containing an icon. Click inside the CENTER of the RED BOX (not the RESIZE text label above it). The RED BOX should be around coordinates (283, 1033).",
                 pre_delay=2.5,
                 expected_x_range=(100, 500)
             )
@@ -279,8 +451,9 @@ class InstagramWorkflow(AsyncBaseWorkflow):
         # ==================== STEP 11: SELECT 4:5 RATIO (INSTAGRAM - LEFT SIDE) ====================
         elif step_name == "select_4_5_ratio":
             logger.info("Looking for 4:5 aspect ratio option...")
-            coords = await self._find_and_click(
-                "A popup menu appeared with aspect ratio options. Find and click '4:5' in this menu. It may have a RED box around it.",
+            coords = await self._find_and_click_with_healing(
+                step_name="select_4_5_ratio",
+                description="A popup menu appeared with aspect ratio options. Find and click '4:5' in this menu. It may have a RED box around it.",
                 pre_delay=1.0,
                 expected_x_range=(100, 500)
             )
@@ -323,8 +496,9 @@ class InstagramWorkflow(AsyncBaseWorkflow):
         elif step_name == "click_caption_area":
             # Use vision to find the caption area - position changes after window expands
             logger.info("Looking for caption text area with vision...")
-            coords = await self._find_and_click(
-                "Find the caption/text input area on Instagram where you write the post description. It may say 'Write a caption...' or be a text input field. Look for a RED box overlay with text 'PASTE BODY' if present. Click inside this text area.",
+            coords = await self._find_and_click_with_healing(
+                step_name="click_caption_area",
+                description="Find the caption/text input area on Instagram where you write the post description. It may say 'Write a caption...' or be a text input field. Look for a RED box overlay with text 'PASTE BODY' if present. Click inside this text area.",
                 pre_delay=1.5,
                 expected_x_range=(100, 1200)
             )

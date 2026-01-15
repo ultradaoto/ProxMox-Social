@@ -44,15 +44,25 @@ platforms:
   instagram:
     enabled: true
     upload_timeout: 30  # Extended timeout for video uploads
-  
+
   facebook:
     enabled: false      # Not yet implemented
-  
+
   tiktok:
     enabled: false      # Not yet implemented
-  
+
   skool:
     enabled: false      # Not yet implemented
+
+# Self-Healing Coordinate System
+self_healing:
+  enabled: true                                      # Enable self-healing coordinate system
+  failure_threshold: 3                               # Trigger healing after N consecutive failures
+  healing_model: "qwen/qwen-2.5-vl-72b-instruct"    # High-accuracy model for healing (use 3.0 when available)
+  coordinate_delta_threshold: 5                      # Update stored coords if delta > N pixels
+  coordinate_storage_path: "data/coordinates"        # Directory for coordinate JSON files
+  save_healing_screenshots: true                     # Save screenshots when healing occurs
+  healing_screenshot_path: "data/healing_screenshots" # Directory for healing debug screenshots
 
 # Performance tuning
 performance:
