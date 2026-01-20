@@ -3,6 +3,8 @@ JSON-Based Workflow Executor
 
 Loads and executes workflows from JSON recording files created via the web UI.
 This replaces the hardcoded Python workflow steps with the user's saved recordings.
+
+Includes Visual Validation System integration for screenshot-based failure detection.
 """
 
 import asyncio
@@ -14,7 +16,23 @@ from typing import List, Optional, Dict, Any
 from src.workflows.async_base_workflow import AsyncBaseWorkflow, StepResult, StepStatus, WorkflowResult
 from src.utils.logger import get_logger
 
+# Visual Validation imports
+try:
+    from src.validation import (
+        ValidationDatabase,
+        ScreenshotCapture,
+        WorkflowValidator,
+        BaselineManager,
+        WorkflowParser
+    )
+    VALIDATION_AVAILABLE = True
+except ImportError:
+    VALIDATION_AVAILABLE = False
+
 logger = get_logger(__name__)
+
+# Validation database path
+VALIDATION_DB_PATH = "/home/ultra/proxmox-social/Ubu-Cont/workflow-validation/validation.db"
 
 
 class JSONWorkflow(AsyncBaseWorkflow):
@@ -25,7 +43,7 @@ class JSONWorkflow(AsyncBaseWorkflow):
     ensuring the workflow matches what the user tested and verified.
     """
     
-    def __init__(self, vnc, vision, input_injector, recording_path: str, platform_name: str):
+    def __init__(self, vnc, vision, input_injector, recording_path: str, platform_name: str, enable_validation: bool = True):
         """
         Initialize JSON workflow.
         
@@ -35,6 +53,7 @@ class JSONWorkflow(AsyncBaseWorkflow):
             input_injector: Input controller instance
             recording_path: Path to the JSON recording file
             platform_name: Name of the platform (instagram, skool, etc.)
+            enable_validation: Enable visual validation system
         """
         super().__init__(vnc, vision, input_injector)
         self.recording_path = Path(recording_path)
@@ -43,8 +62,29 @@ class JSONWorkflow(AsyncBaseWorkflow):
         self.actions: List[Dict[str, Any]] = []
         self._step_names: List[str] = []
         
+        # Visual validation
+        self.enable_validation = enable_validation and VALIDATION_AVAILABLE
+        self.validator: Optional[WorkflowValidator] = None
+        self.screenshot_capture: Optional[ScreenshotCapture] = None
+        self._validation_run_id: Optional[int] = None
+        self._click_index: int = 0  # Track click number separately from action index
+        
+        if self.enable_validation:
+            self._init_validation()
+        
         # Load the recording
         self._load_recording()
+    
+    def _init_validation(self):
+        """Initialize visual validation system."""
+        try:
+            db = ValidationDatabase(VALIDATION_DB_PATH)
+            self.screenshot_capture = ScreenshotCapture(self.vnc, box_size=100)
+            self.validator = WorkflowValidator(db, self.screenshot_capture, logger=logger)
+            logger.info("Visual validation system initialized")
+        except Exception as e:
+            logger.warning(f"Failed to initialize validation: {e}")
+            self.enable_validation = False
     
     def _load_recording(self):
         """Load the JSON recording file."""
@@ -79,6 +119,7 @@ class JSONWorkflow(AsyncBaseWorkflow):
         Execute the entire workflow from JSON.
         
         Overrides base execute to run actions sequentially from JSON.
+        Includes visual validation for click actions.
         """
         self.current_post = post
         start_time = time.time()
@@ -88,7 +129,18 @@ class JSONWorkflow(AsyncBaseWorkflow):
         logger.info(f"Recording: {self.recording_path.name}")
         logger.info(f"Post ID: {post.id}")
         logger.info(f"Total actions: {len(self.actions)}")
+        logger.info(f"Visual Validation: {'ENABLED' if self.enable_validation else 'DISABLED'}")
         logger.info("=" * 60)
+        
+        # Start validation run
+        workflow_name = self.recording_path.stem  # e.g., 'linkedin_default'
+        self._click_index = 0  # Reset click counter for this run
+        if self.enable_validation and self.validator:
+            try:
+                self._validation_run_id = self.validator.start_run(workflow_name, post.id)
+                logger.info(f"Started validation run {self._validation_run_id}")
+            except Exception as e:
+                logger.warning(f"Failed to start validation run: {e}")
         
         try:
             for i, action in enumerate(self.actions):
@@ -102,6 +154,11 @@ class JSONWorkflow(AsyncBaseWorkflow):
                 if result.status == StepStatus.FAILED:
                     elapsed = time.time() - start_time
                     logger.error(f"Workflow failed at action {i+1}: {result.message}")
+                    
+                    # Abort validation run on failure
+                    if self.enable_validation and self.validator and self.validator.is_run_active:
+                        self.validator.abort_run(f"Action {i+1} failed: {result.message}")
+                    
                     return WorkflowResult(
                         success=False,
                         post_id=post.id,
@@ -113,20 +170,54 @@ class JSONWorkflow(AsyncBaseWorkflow):
                         duration_seconds=elapsed
                     )
             
+            # Validate all captured clicks before marking success
+            validation_passed = True
+            validation_failure_msg = None
+            
+            if self.enable_validation and self.validator and self.validator.is_run_active:
+                try:
+                    val_result = self.validator.validate_run()
+                    validation_passed = val_result.success
+                    if not validation_passed:
+                        validation_failure_msg = val_result.failure_reason
+                        logger.warning(f"Visual validation FAILED: {validation_failure_msg}")
+                except Exception as e:
+                    logger.error(f"Validation error: {e}")
+                    # Don't fail workflow on validation error, just log it
+            
             elapsed = time.time() - start_time
-            logger.info(f"Workflow completed successfully in {elapsed:.1f}s")
-            return WorkflowResult(
-                success=True,
-                post_id=post.id,
-                platform=self._platform_name,
-                steps_completed=len(self.actions),
-                total_steps=len(self.actions),
-                duration_seconds=elapsed
-            )
+            
+            if validation_passed:
+                logger.info(f"Workflow completed successfully in {elapsed:.1f}s")
+                return WorkflowResult(
+                    success=True,
+                    post_id=post.id,
+                    platform=self._platform_name,
+                    steps_completed=len(self.actions),
+                    total_steps=len(self.actions),
+                    duration_seconds=elapsed
+                )
+            else:
+                logger.warning(f"Workflow actions completed but validation failed in {elapsed:.1f}s")
+                return WorkflowResult(
+                    success=False,
+                    post_id=post.id,
+                    platform=self._platform_name,
+                    steps_completed=len(self.actions),
+                    total_steps=len(self.actions),
+                    error_message=f"Visual validation failed: {validation_failure_msg}",
+                    error_step="validation",
+                    duration_seconds=elapsed
+                )
             
         except Exception as e:
             elapsed = time.time() - start_time
             logger.exception(f"Workflow error: {e}")
+            
+            # Abort validation on exception
+            if self.enable_validation and self.validator and self.validator.is_run_active:
+                self.validator.abort_run(str(e))
+            
             return WorkflowResult(
                 success=False,
                 post_id=post.id if post else "unknown",
@@ -151,13 +242,13 @@ class JSONWorkflow(AsyncBaseWorkflow):
         
         try:
             if action_type == 'click':
-                return await self._execute_click(action)
+                return await self._execute_click(action, index)
             
             elif action_type == 'double_click':
-                return await self._execute_double_click(action)
+                return await self._execute_double_click(action, index)
             
             elif action_type == 'right_click':
-                return await self._execute_right_click(action)
+                return await self._execute_right_click(action, index)
             
             elif action_type == 'wait':
                 return await self._execute_wait(action)
@@ -185,7 +276,21 @@ class JSONWorkflow(AsyncBaseWorkflow):
             logger.error(f"Action failed: {e}")
             return StepResult(StepStatus.FAILED, str(e))
     
-    async def _execute_click(self, action: Dict[str, Any]) -> StepResult:
+    async def _capture_for_validation(self, x: int, y: int):
+        """Capture screenshot for validation before click. Uses click_index, not action_index."""
+        if self.enable_validation and self.validator and self.validator.is_run_active:
+            try:
+                click_idx = self._click_index
+                await asyncio.to_thread(
+                    self.validator.capture_click,
+                    click_idx, x, y
+                )
+                logger.debug(f"Captured validation screenshot for click {click_idx} at ({x}, {y})")
+                self._click_index += 1  # Increment after capture
+            except Exception as e:
+                logger.warning(f"Failed to capture validation screenshot: {e}")
+    
+    async def _execute_click(self, action: Dict[str, Any], action_index: int = 0) -> StepResult:
         """Execute a click action."""
         x = action.get('x', 0)
         y = action.get('y', 0)
@@ -194,6 +299,9 @@ class JSONWorkflow(AsyncBaseWorkflow):
         
         logger.info(f"Clicking at ({x}, {y}) - {description}")
         
+        # Capture screenshot BEFORE click for validation
+        await self._capture_for_validation(x, y)
+        
         await asyncio.to_thread(self.input.move_to, x, y)
         await asyncio.sleep(0.1)
         await asyncio.to_thread(self.input.click, button)
@@ -201,13 +309,16 @@ class JSONWorkflow(AsyncBaseWorkflow):
         
         return StepResult(StepStatus.SUCCESS, f"Clicked at ({x}, {y})")
     
-    async def _execute_double_click(self, action: Dict[str, Any]) -> StepResult:
+    async def _execute_double_click(self, action: Dict[str, Any], action_index: int = 0) -> StepResult:
         """Execute a double-click action."""
         x = action.get('x', 0)
         y = action.get('y', 0)
         description = action.get('description', '')
         
         logger.info(f"Double-clicking at ({x}, {y}) - {description}")
+        
+        # Capture screenshot BEFORE click for validation
+        await self._capture_for_validation(x, y)
         
         await asyncio.to_thread(self.input.move_to, x, y)
         await asyncio.sleep(0.1)
@@ -218,13 +329,16 @@ class JSONWorkflow(AsyncBaseWorkflow):
         
         return StepResult(StepStatus.SUCCESS, f"Double-clicked at ({x}, {y})")
     
-    async def _execute_right_click(self, action: Dict[str, Any]) -> StepResult:
+    async def _execute_right_click(self, action: Dict[str, Any], action_index: int = 0) -> StepResult:
         """Execute a right-click action."""
         x = action.get('x', 0)
         y = action.get('y', 0)
         description = action.get('description', '')
         
         logger.info(f"Right-clicking at ({x}, {y}) - {description}")
+        
+        # Capture screenshot BEFORE click for validation
+        await self._capture_for_validation(x, y)
         
         await asyncio.to_thread(self.input.move_to, x, y)
         await asyncio.sleep(0.1)
