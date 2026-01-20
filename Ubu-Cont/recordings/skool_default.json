@@ -1,176 +1,176 @@
 {
-  "platform": "skool",
-  "created": "2026-01-14T12:00:00Z",
-  "resolution": "1600x1200",
-  "description": "Skool posting workflow - extracted from skool_workflow.py",
-  "notes": "Uses OSP panel on right side. Skool uses vision-based finding for most elements.",
   "actions": [
     {
+      "delay_before_ms": 2000,
+      "description": "Click OPEN URL button on OSP panel",
       "type": "click",
       "x": 1475,
-      "y": 270,
-      "delay_before_ms": 2000,
-      "description": "Click OPEN URL button on OSP panel"
+      "y": 270
     },
     {
-      "type": "wait",
       "delay_ms": 6000,
-      "description": "Wait for Skool page to load"
+      "description": "Wait for Skool page to load",
+      "type": "wait"
     },
     {
-      "type": "click",
-      "x": 500,
-      "y": 300,
       "delay_before_ms": 2000,
-      "description": "Click 'Start a post' or 'Write something' area (use vision)"
+      "description": "Click 'Start a post' or 'Write something' area (use vision)",
+      "type": "click",
+      "x": 248,
+      "y": 252
     },
     {
-      "type": "wait",
       "delay_ms": 3000,
-      "description": "Wait for post dialog to open"
+      "description": "Wait for post dialog to open",
+      "type": "wait"
     },
     {
+      "delay_before_ms": 1500,
+      "description": "Click COPY TITLE on OSP panel",
       "type": "click",
       "x": 1475,
-      "y": 320,
-      "delay_before_ms": 1500,
-      "description": "Click COPY TITLE on OSP panel"
+      "y": 320
     },
     {
-      "type": "wait",
       "delay_ms": 1000,
-      "description": "Wait for clipboard"
+      "description": "Wait for clipboard",
+      "type": "wait"
     },
     {
-      "type": "click",
-      "x": 500,
-      "y": 250,
       "delay_before_ms": 1500,
-      "description": "Click title input field"
+      "description": "Click title input field",
+      "type": "click",
+      "x": 210,
+      "y": 297
     },
     {
-      "type": "key",
-      "key": "v",
       "ctrl": true,
       "delay_before_ms": 500,
-      "description": "Paste title"
+      "description": "Paste title",
+      "key": "v",
+      "type": "key"
     },
     {
-      "type": "wait",
       "delay_ms": 1000,
-      "description": "Wait for title to paste"
+      "description": "Wait for title to paste",
+      "type": "wait"
     },
     {
+      "delay_before_ms": 1500,
+      "description": "Click COPY BODY on OSP panel",
       "type": "click",
       "x": 1475,
-      "y": 388,
-      "delay_before_ms": 1500,
-      "description": "Click COPY BODY on OSP panel"
+      "y": 388
     },
     {
-      "type": "wait",
       "delay_ms": 1000,
-      "description": "Wait for clipboard"
+      "description": "Wait for clipboard",
+      "type": "wait"
     },
     {
-      "type": "click",
-      "x": 500,
-      "y": 400,
       "delay_before_ms": 1500,
-      "description": "Click body/content area (RED label: 'Click here & Paste Body')"
+      "description": "Click body/content area (RED label: 'Click here & Paste Body')",
+      "type": "click",
+      "x": 213,
+      "y": 350
     },
     {
-      "type": "key",
-      "key": "v",
       "ctrl": true,
       "delay_before_ms": 500,
-      "description": "Paste body content"
+      "description": "Paste body content",
+      "key": "v",
+      "type": "key"
     },
     {
-      "type": "wait",
       "delay_ms": 1000,
-      "description": "Wait for body to paste"
+      "description": "Wait for body to paste",
+      "type": "wait"
     },
     {
+      "delay_before_ms": 1500,
+      "description": "Click COPY IMAGE on OSP panel (optional)",
       "type": "click",
       "x": 1475,
-      "y": 450,
-      "delay_before_ms": 1500,
-      "description": "Click COPY IMAGE on OSP panel (optional)"
+      "y": 450
     },
     {
-      "type": "wait",
       "delay_ms": 2000,
-      "description": "Wait for image to copy to clipboard"
+      "description": "Wait for image to copy to clipboard",
+      "type": "wait"
     },
     {
-      "type": "click",
-      "x": 500,
-      "y": 400,
       "delay_before_ms": 1500,
-      "description": "Click same body area for image paste"
+      "description": "Click same body area for image paste",
+      "type": "click",
+      "x": 217,
+      "y": 346
     },
     {
-      "type": "key",
-      "key": "v",
       "ctrl": true,
       "delay_before_ms": 500,
-      "description": "Paste image"
+      "description": "Paste image",
+      "key": "v",
+      "type": "key"
     },
     {
-      "type": "wait",
       "delay_ms": 4000,
-      "description": "Wait for image upload"
+      "description": "Wait for image upload",
+      "type": "wait"
     },
     {
-      "type": "click",
-      "x": 1475,
-      "y": 600,
       "delay_before_ms": 2000,
-      "description": "Click POST button on OSP panel (orange)"
+      "description": "Click POST button on OSP panel (orange)",
+      "type": "click",
+      "x": 1473,
+      "y": 709
     },
     {
-      "type": "wait",
       "delay_ms": 1000,
-      "description": "Wait for OSP to trigger"
+      "description": "Wait for OSP to trigger",
+      "type": "wait"
     },
     {
-      "type": "click",
-      "x": 700,
-      "y": 700,
       "delay_before_ms": 2000,
-      "description": "Click Skool's Post/Submit button in dialog"
+      "description": "Click Skool's Post/Submit button in dialog",
+      "type": "click",
+      "x": 831,
+      "y": 934
     },
     {
-      "type": "wait",
       "delay_ms": 5000,
-      "description": "Wait for post to submit"
+      "description": "Wait for post to submit",
+      "type": "wait"
     },
     {
+      "delay_before_ms": 2000,
+      "description": "Click SUCCESS on OSP panel (green)",
       "type": "click",
       "x": 1416,
-      "y": 785,
-      "delay_before_ms": 2000,
-      "description": "Click SUCCESS on OSP panel (green)"
+      "y": 785
     },
     {
-      "type": "wait",
       "delay_ms": 1000,
-      "description": "Wait before cleanup"
+      "description": "Wait before cleanup",
+      "type": "wait"
     },
     {
+      "delay_before_ms": 1000,
+      "description": "Click in Chrome area to focus",
       "type": "click",
       "x": 600,
-      "y": 500,
-      "delay_before_ms": 1000,
-      "description": "Click in Chrome area to focus"
+      "y": 500
     },
     {
-      "type": "key",
-      "key": "w",
       "ctrl": true,
       "delay_before_ms": 500,
-      "description": "Close Chrome tab with Ctrl+W"
+      "description": "Close Chrome tab with Ctrl+W",
+      "key": "w",
+      "type": "key"
     }
-  ]
+  ],
+  "created": "2026-01-14T12:00:00Z",
+  "description": "Skool posting workflow - extracted from skool_workflow.py",
+  "notes": "Uses OSP panel on right side. Skool uses vision-based finding for most elements.",
+  "platform": "skool",
+  "resolution": "1600x1200"
 }

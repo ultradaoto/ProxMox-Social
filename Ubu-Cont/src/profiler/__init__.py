@@ -51,7 +51,7 @@ from .analyzer import ProfileAnalyzer, MouseProfile, KeyboardProfile
 from .profile_generator import ProfileGenerator
 from .profile_applier import ProfileApplier
 from .replay_engine import ReplayEngine, ProfileTester
-from .calibration import CalibrationExercises, CalibrationTarget, CalibrationSession
+from .calibration import CalibrationExercises, CalibrationTarget
 from .recorder import ProfilerRecorder, VNCPassthroughRecorder
 from .visualizer import ProfileVisualizer
 from .vnc_passthrough import VNCPassthrough, PassthroughManager
@@ -81,7 +81,7 @@ __all__ = [
     # Calibration
     "CalibrationExercises",
     "CalibrationTarget",
-    "CalibrationSession",
+
     # Orchestration
     "ProfilerRecorder",
     "VNCPassthroughRecorder",

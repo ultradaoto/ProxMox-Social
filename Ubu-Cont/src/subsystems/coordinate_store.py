@@ -205,8 +205,11 @@ class CoordinateStore:
             # Save to disk
             self._save()
 
-            # Check if healing needed
-            return self.should_heal(step_name)
+            # Check if healing needed (inline to avoid deadlock - already holding lock)
+            entry = self._coordinates.get(step_name)
+            if entry:
+                return entry.consecutive_failures >= 3
+            return False
 
     def should_heal(self, step_name: str) -> bool:
         """

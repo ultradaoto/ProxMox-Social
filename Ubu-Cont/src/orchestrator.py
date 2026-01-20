@@ -17,11 +17,18 @@ from src.subsystems.vnc_capture import VNCCapture
 from src.vision_controller import VisionController
 from src.input_controller import InputController
 from src.workflows.async_base_workflow import WorkflowResult
-from src.workflows.skool_workflow import SkoolWorkflow
-from src.workflows.instagram_workflow import InstagramWorkflow
+from src.workflows.json_workflow import create_instagram_workflow, create_skool_workflow, create_facebook_workflow, create_linkedin_workflow
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
+
+# Pause flag path - shared with vnc_stream_server.py
+PAUSE_FLAG_PATH = "/tmp/brain_pause_flag"
+
+def is_main_paused():
+    """Check if main automation is paused via web UI."""
+    import os
+    return os.path.exists(PAUSE_FLAG_PATH)
 
 
 class BrainOrchestrator:
@@ -154,41 +161,58 @@ class BrainOrchestrator:
         }
     
     def _initialize_workflows(self):
-        """Initialize platform-specific workflows."""
-        workflow_config = self.config.get("workflow", self.config.get("workflows", {}))
+        """Initialize platform-specific workflows from JSON recordings."""
+        logger.info("Loading workflows from JSON recordings...")
 
-        # Skool workflow
-        skool_workflow = SkoolWorkflow(
-            vnc=self.vnc,
-            vision=self.vision,
-            input_injector=self.input
-        )
-        if self.screenshot_saver:
-            skool_workflow.set_screenshot_saver(self.screenshot_saver)
+        # Skool workflow - loads from recordings/skool_default.json
+        try:
+            skool_workflow = create_skool_workflow(
+                vnc=self.vnc,
+                vision=self.vision,
+                input_injector=self.input
+            )
+            self.workflows[Platform.SKOOL] = skool_workflow
+            logger.info(f"Loaded Skool workflow: {len(skool_workflow.actions)} actions")
+        except Exception as e:
+            logger.error(f"Failed to load Skool workflow: {e}")
 
-        skool_workflow.max_retries = workflow_config.get("max_retries", 3)
-        skool_workflow.step_timeout = workflow_config.get("step_timeout_seconds", workflow_config.get("step_timeout", 120))  # 2 min timeout per step
+        # Instagram workflow - loads from recordings/instagram_default.json
+        try:
+            instagram_workflow = create_instagram_workflow(
+                vnc=self.vnc,
+                vision=self.vision,
+                input_injector=self.input
+            )
+            self.workflows[Platform.INSTAGRAM] = instagram_workflow
+            logger.info(f"Loaded Instagram workflow: {len(instagram_workflow.actions)} actions")
+        except Exception as e:
+            logger.error(f"Failed to load Instagram workflow: {e}")
 
-        self.workflows[Platform.SKOOL] = skool_workflow
+        # Facebook workflow - loads from recordings/facebook_default.json
+        try:
+            facebook_workflow = create_facebook_workflow(
+                vnc=self.vnc,
+                vision=self.vision,
+                input_injector=self.input
+            )
+            self.workflows[Platform.FACEBOOK] = facebook_workflow
+            logger.info(f"Loaded Facebook workflow: {len(facebook_workflow.actions)} actions")
+        except Exception as e:
+            logger.error(f"Failed to load Facebook workflow: {e}")
 
-        # Instagram workflow
-        instagram_workflow = InstagramWorkflow(
-            vnc=self.vnc,
-            vision=self.vision,
-            input_injector=self.input
-        )
-        if self.screenshot_saver:
-            instagram_workflow.set_screenshot_saver(self.screenshot_saver)
+        # LinkedIn workflow - loads from recordings/linkedin_default.json
+        try:
+            linkedin_workflow = create_linkedin_workflow(
+                vnc=self.vnc,
+                vision=self.vision,
+                input_injector=self.input
+            )
+            self.workflows[Platform.LINKEDIN] = linkedin_workflow
+            logger.info(f"Loaded LinkedIn workflow: {len(linkedin_workflow.actions)} actions")
+        except Exception as e:
+            logger.error(f"Failed to load LinkedIn workflow: {e}")
 
-        instagram_workflow.max_retries = workflow_config.get("max_retries", 3)
-        instagram_workflow.step_timeout = workflow_config.get("step_timeout_seconds", workflow_config.get("step_timeout", 120))  # 2 min timeout per step
-
-        self.workflows[Platform.INSTAGRAM] = instagram_workflow
-
-        # TODO: Add other platforms
-        # self.workflows[Platform.FACEBOOK] = FacebookWorkflow(...)
-        # self.workflows[Platform.TIKTOK] = TikTokWorkflow(...)
-        logger.info(f"Initialized workflows for: {[p.value for p in self.workflows.keys()]}")
+        logger.info(f"Initialized JSON-based workflows for: {[p.value for p in self.workflows.keys()]}")
     
     async def shutdown(self):
         """Shutdown all subsystems gracefully."""
@@ -212,9 +236,19 @@ class BrainOrchestrator:
         
         while self.running:
             try:
+                # Check if paused via web UI
+                if is_main_paused():
+                    logger.debug("Main automation PAUSED via web UI - waiting...")
+                    await asyncio.sleep(2)
+                    continue
+                
                 post = await self.fetcher.get_next_pending_post()
                 
                 if post:
+                    # Double-check pause before starting workflow
+                    if is_main_paused():
+                        logger.info("Pause detected before workflow - skipping this cycle")
+                        continue
                     await self._process_post(post)
                 else:
                     logger.debug("No pending posts, waiting...")
@@ -263,6 +297,8 @@ class BrainOrchestrator:
                 workflow = self.workflows.get(Platform.INSTAGRAM)
             elif detected_platform == "FACEBOOK":
                 workflow = self.workflows.get(Platform.FACEBOOK)
+            elif detected_platform == "LINKEDIN":
+                workflow = self.workflows.get(Platform.LINKEDIN)
             
             if not workflow:
                 logger.error(f"No workflow for detected platform: {detected_platform}")
@@ -310,13 +346,19 @@ class BrainOrchestrator:
     async def _wait_for_osp_and_detect_platform(self) -> Optional[str]:
         """
         Wait for OSP to be ready and detect which platform is loaded.
-        Returns: 'SKOOL', 'INSTAGRAM', 'FACEBOOK', or None if timeout
+        Returns: 'SKOOL', 'INSTAGRAM', 'FACEBOOK', 'LINKEDIN', or None if timeout
         """
         import asyncio
         
         max_attempts = 15  # Up to ~10 minutes
         
         for attempt in range(1, max_attempts + 1):
+            # Check pause during detection loop
+            if is_main_paused():
+                logger.info("Paused during OSP detection - waiting...")
+                await asyncio.sleep(2)
+                continue
+            
             logger.info(f"Checking OSP for platform (attempt {attempt}/{max_attempts})...")
             
             await asyncio.sleep(3.0)  # Let screen settle
@@ -327,11 +369,12 @@ class BrainOrchestrator:
                     self.vision.analyze_screen,
                     "Look at the OSP panel on the right side of the screen. "
                     "Do you see RED text that says 'NO POSTS'? "
-                    "Or do you see a platform name in the upper right like 'SKOOL', 'INSTAGRAM', or 'FACEBOOK'? "
+                    "Or do you see a platform name in the upper right like 'SKOOL', 'INSTAGRAM', 'FACEBOOK', or 'LINKEDIN'? "
                     "Answer 'NO_POSTS' if you see red 'NO POSTS' text. "
                     "Answer 'SKOOL' if you see Skool. "
                     "Answer 'INSTAGRAM' if you see Instagram. "
-                    "Answer 'FACEBOOK' if you see Facebook."
+                    "Answer 'FACEBOOK' if you see Facebook. "
+                    "Answer 'LINKEDIN' if you see LinkedIn."
                 )
                 
                 result_upper = result.upper()
@@ -349,6 +392,10 @@ class BrainOrchestrator:
                 if "FACEBOOK" in result_upper and "NO" not in result_upper:
                     logger.info("Detected FACEBOOK on OSP!")
                     return "FACEBOOK"
+                
+                if "LINKEDIN" in result_upper and "NO" not in result_upper:
+                    logger.info("Detected LINKEDIN on OSP!")
+                    return "LINKEDIN"
                 
                 # If we see "NO POSTS", wait longer
                 if "NO_POSTS" in result_upper or "NO POSTS" in result_upper:

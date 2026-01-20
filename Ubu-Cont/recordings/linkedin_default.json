@@ -1,0 +1,208 @@
+{
+  "actions": [
+    {
+      "delay_before_ms": 1000,
+      "description": "Click OPEN URL on OSP panel",
+      "type": "click",
+      "x": 1475,
+      "y": 270
+    },
+    {
+      "delay_ms": 5000,
+      "description": "Wait for LinkedIn page to load",
+      "type": "wait"
+    },
+    {
+      "delay_before_ms": 2000,
+      "description": "Click 'Start a post' button on LinkedIn - EDIT THIS COORDINATE",
+      "type": "click",
+      "x": 450,
+      "y": 321
+    },
+    {
+      "delay_ms": 2000,
+      "description": "Wait for post dialog to open",
+      "type": "wait"
+    },
+    {
+      "delay_before_ms": 1500,
+      "description": "Click COPY FILE LOCATION on OSP panel (for image)",
+      "type": "click",
+      "x": 1475,
+      "y": 505
+    },
+    {
+      "delay_ms": 1000,
+      "description": "Wait for clipboard",
+      "type": "wait"
+    },
+    {
+      "delay_before_ms": 1500,
+      "description": "Click Add media/image button - EDIT THIS COORDINATE",
+      "type": "click",
+      "x": 345,
+      "y": 672
+    },
+    {
+      "delay_ms": 2000,
+      "description": "Wait for file dialog",
+      "type": "wait"
+    },
+    {
+      "delay_before_ms": 1000,
+      "description": "Click file name box - EDIT THIS COORDINATE",
+      "type": "click",
+      "x": 371,
+      "y": 538
+    },
+    {
+      "ctrl": true,
+      "delay_before_ms": 300,
+      "description": "Select all in file name box",
+      "key": "a",
+      "type": "key"
+    },
+    {
+      "ctrl": true,
+      "delay_before_ms": 300,
+      "description": "Paste file path",
+      "key": "v",
+      "type": "key"
+    },
+    {
+      "delay_ms": 1000,
+      "description": "Wait for path to paste",
+      "type": "wait"
+    },
+    {
+      "delay_before_ms": 1000,
+      "description": "Click Open button - EDIT THIS COORDINATE",
+      "type": "click",
+      "x": 634,
+      "y": 565
+    },
+    {
+      "button": "left",
+      "ctrl": false,
+      "delay_ms": 6000,
+      "description": "Wait for image to upload",
+      "shift": false,
+      "type": "wait"
+    },
+    {
+      "button": "left",
+      "ctrl": false,
+      "delay_before_ms": 4000,
+      "description": "",
+      "shift": false,
+      "type": "click",
+      "x": 1184,
+      "y": 1023
+    },
+    {
+      "button": "left",
+      "ctrl": false,
+      "delay_before_ms": 3000,
+      "delay_ms": 1000,
+      "description": "",
+      "shift": false,
+      "type": "wait"
+    },
+    {
+      "delay_before_ms": 1500,
+      "description": "Click COPY BODY on OSP panel",
+      "type": "click",
+      "x": 1475,
+      "y": 388
+    },
+    {
+      "delay_ms": 1000,
+      "description": "Wait for clipboard",
+      "type": "wait"
+    },
+    {
+      "delay_before_ms": 1500,
+      "description": "Click post text area - EDIT THIS COORDINATE",
+      "type": "click",
+      "x": 439,
+      "y": 316
+    },
+    {
+      "ctrl": true,
+      "delay_before_ms": 500,
+      "description": "Paste body content",
+      "key": "v",
+      "type": "key"
+    },
+    {
+      "delay_ms": 1500,
+      "description": "Wait for content to paste",
+      "type": "wait"
+    },
+    {
+      "delay_before_ms": 2000,
+      "description": "Click Post button - EDIT THIS COORDINATE",
+      "type": "click",
+      "x": 992,
+      "y": 1039
+    },
+    {
+      "delay_ms": 5000,
+      "description": "Wait for post to complete",
+      "type": "wait"
+    },
+    {
+      "delay_before_ms": 3000,
+      "description": "Click SUCCESS on OSP panel",
+      "type": "click",
+      "x": 1416,
+      "y": 785
+    },
+    {
+      "delay_ms": 1000,
+      "description": "Wait before cleanup",
+      "type": "wait"
+    },
+    {
+      "delay_before_ms": 500,
+      "description": "Click in Chrome area to focus",
+      "type": "click",
+      "x": 723,
+      "y": 529
+    },
+    {
+      "ctrl": true,
+      "delay_before_ms": 500,
+      "description": "Close Chrome tab with Ctrl+W",
+      "key": "w",
+      "type": "key"
+    }
+  ],
+  "created": "2026-01-18T21:00:00Z",
+  "description": "LinkedIn posting workflow - edit coordinates via web UI",
+  "notes": "Uses OSP panel on right side. Edit this workflow via the web UI at http://localhost:5555",
+  "osp_buttons": {
+    "COPY_BODY": [
+      1475,
+      388
+    ],
+    "COPY_FILE_LOCATION": [
+      1475,
+      505
+    ],
+    "FAILED": [
+      1534,
+      785
+    ],
+    "OPEN_URL": [
+      1475,
+      270
+    ],
+    "SUCCESS": [
+      1416,
+      785
+    ]
+  },
+  "platform": "linkedin",
+  "resolution": "1600x1200"
+}

@@ -1,171 +1,294 @@
 {
-  "platform": "facebook",
+  "actions": [
+    {
+      "delay_before_ms": 1000,
+      "description": "Click OPEN URL on OSP panel",
+      "type": "click",
+      "x": 1475,
+      "y": 270
+    },
+    {
+      "delay_ms": 10000,
+      "description": "Wait for Facebook page to load",
+      "type": "wait",
+      "button": "left",
+      "delay_before_ms": 1000,
+      "ctrl": false,
+      "shift": false
+    },
+    {
+      "delay_before_ms": 2000,
+      "description": "Click 'What's on your mind?' or 'Create post' area",
+      "type": "click",
+      "x": 705,
+      "y": 877
+    },
+    {
+      "delay_ms": 2000,
+      "description": "Wait for post composer to open",
+      "type": "wait"
+    },
+    {
+      "delay_before_ms": 1500,
+      "description": "Click COPY BODY on OSP panel",
+      "type": "click",
+      "x": 1482,
+      "y": 386
+    },
+    {
+      "delay_ms": 1000,
+      "description": "Wait for clipboard",
+      "type": "wait"
+    },
+    {
+      "delay_before_ms": 1500,
+      "description": "Click in post text area",
+      "type": "click",
+      "x": 478,
+      "y": 556
+    },
+    {
+      "ctrl": true,
+      "delay_before_ms": 500,
+      "description": "Paste post content",
+      "key": "v",
+      "type": "key"
+    },
+    {
+      "delay_ms": 1500,
+      "description": "Wait for content to paste",
+      "type": "wait"
+    },
+    {
+      "delay_before_ms": 1500,
+      "description": "Click 'Photo/Video' button to add media",
+      "type": "click",
+      "x": 677,
+      "y": 1005
+    },
+    {
+      "delay_ms": 2000,
+      "description": "Wait for file picker or upload area",
+      "type": "wait"
+    },
+    {
+      "delay_before_ms": 1000,
+      "description": "Click COPY FILE LOCATION on OSP panel",
+      "type": "click",
+      "x": 1475,
+      "y": 505
+    },
+    {
+      "delay_ms": 1000,
+      "description": "Wait for clipboard",
+      "type": "wait"
+    },
+    {
+      "delay_before_ms": 1500,
+      "description": "Click File name text box (if File Explorer opened)",
+      "type": "click",
+      "x": 371,
+      "y": 535
+    },
+    {
+      "ctrl": true,
+      "delay_before_ms": 300,
+      "description": "Select all in file name box",
+      "key": "a",
+      "type": "key"
+    },
+    {
+      "ctrl": true,
+      "delay_before_ms": 300,
+      "description": "Paste file path",
+      "key": "v",
+      "type": "key"
+    },
+    {
+      "delay_ms": 1000,
+      "description": "Wait for path to paste",
+      "type": "wait"
+    },
+    {
+      "delay_before_ms": 1000,
+      "description": "Click Open button in File Explorer",
+      "type": "click",
+      "x": 639,
+      "y": 566
+    },
+    {
+      "delay_ms": 5000,
+      "description": "Wait for image/video to upload",
+      "type": "wait"
+    },
+    {
+      "button": "left",
+      "ctrl": false,
+      "delay_before_ms": 1000,
+      "description": "Click \"NEXT\"",
+      "shift": false,
+      "type": "click",
+      "x": 670,
+      "y": 1070
+    },
+    {
+      "button": "left",
+      "ctrl": false,
+      "delay_before_ms": 1000,
+      "delay_ms": 2000,
+      "description": "",
+      "shift": false,
+      "type": "wait"
+    },
+    {
+      "button": "left",
+      "ctrl": false,
+      "delay_before_ms": 2500,
+      "description": "Click \"Share to Groups\"",
+      "shift": false,
+      "type": "click",
+      "x": 587,
+      "y": 662
+    },
+    {
+      "button": "left",
+      "ctrl": false,
+      "delay_before_ms": 1400,
+      "delay_ms": 1000,
+      "description": "",
+      "shift": false,
+      "type": "wait"
+    },
+    {
+      "button": "left",
+      "ctrl": false,
+      "delay_before_ms": 5000,
+      "description": "Add \"VNS\" Group",
+      "shift": false,
+      "type": "click",
+      "x": 887,
+      "y": 446
+    },
+    {
+      "button": "left",
+      "ctrl": false,
+      "delay_before_ms": 6000,
+      "delay_ms": 1000,
+      "description": "",
+      "shift": false,
+      "type": "wait"
+    },
+    {
+      "button": "left",
+      "ctrl": false,
+      "delay_before_ms": 1700,
+      "description": "Click \"Done\"",
+      "shift": false,
+      "type": "click",
+      "x": 671,
+      "y": 908
+    },
+    {
+      "button": "left",
+      "ctrl": false,
+      "delay_before_ms": 722,
+      "delay_ms": 3050,
+      "description": "",
+      "shift": false,
+      "type": "wait"
+    },
+    {
+      "delay_before_ms": 2000,
+      "description": "Click 'Post' button to publish",
+      "type": "click",
+      "x": 787,
+      "y": 865
+    },
+    {
+      "button": "left",
+      "ctrl": false,
+      "delay_before_ms": 5000,
+      "delay_ms": 3000,
+      "description": "",
+      "shift": false,
+      "type": "wait"
+    },
+    {
+      "button": "left",
+      "ctrl": false,
+      "delay_before_ms": 1000,
+      "description": "\"Not Now\" button",
+      "shift": false,
+      "type": "click",
+      "x": 736,
+      "y": 792
+    },
+    {
+      "delay_ms": 5000,
+      "description": "Wait for post to complete",
+      "type": "wait"
+    },
+    {
+      "delay_before_ms": 3000,
+      "description": "Click SUCCESS on OSP panel",
+      "type": "click",
+      "x": 1416,
+      "y": 785
+    },
+    {
+      "delay_ms": 1000,
+      "description": "Wait before cleanup",
+      "type": "wait"
+    },
+    {
+      "delay_before_ms": 500,
+      "description": "Click in Chrome area to focus",
+      "type": "click",
+      "x": 725,
+      "y": 811
+    },
+    {
+      "button": "left",
+      "ctrl": false,
+      "delay_before_ms": 3000,
+      "delay_ms": 1000,
+      "description": "",
+      "shift": false,
+      "type": "wait"
+    },
+    {
+      "ctrl": true,
+      "delay_before_ms": 500,
+      "description": "Close Chrome tab with Ctrl+W",
+      "key": "w",
+      "type": "key"
+    }
+  ],
   "created": "2026-01-14T12:00:00Z",
-  "resolution": "1600x1200",
   "description": "Facebook posting workflow - based on Instagram workflow, needs calibration",
   "notes": "TEMPLATE - Record your actual Facebook workflow to get correct coordinates. Uses OSP panel on right side.",
   "osp_buttons": {
-    "OPEN_URL": [1475, 270],
-    "COPY_FILE_LOCATION": [1475, 505],
-    "COPY_BODY": [1482, 386],
-    "SUCCESS": [1416, 785],
-    "FAILED": [1534, 785]
+    "COPY_BODY": [
+      1482,
+      386
+    ],
+    "COPY_FILE_LOCATION": [
+      1475,
+      505
+    ],
+    "FAILED": [
+      1534,
+      785
+    ],
+    "OPEN_URL": [
+      1475,
+      270
+    ],
+    "SUCCESS": [
+      1416,
+      785
+    ]
   },
-  "actions": [
-    {
-      "type": "click",
-      "x": 1475,
-      "y": 270,
-      "delay_before_ms": 1000,
-      "description": "Click OPEN URL on OSP panel"
-    },
-    {
-      "type": "wait",
-      "delay_ms": 5000,
-      "description": "Wait for Facebook page to load"
-    },
-    {
-      "type": "click",
-      "x": 500,
-      "y": 250,
-      "delay_before_ms": 2000,
-      "description": "Click 'What's on your mind?' or 'Create post' area"
-    },
-    {
-      "type": "wait",
-      "delay_ms": 2000,
-      "description": "Wait for post composer to open"
-    },
-    {
-      "type": "click",
-      "x": 1482,
-      "y": 386,
-      "delay_before_ms": 1500,
-      "description": "Click COPY BODY on OSP panel"
-    },
-    {
-      "type": "wait",
-      "delay_ms": 1000,
-      "description": "Wait for clipboard"
-    },
-    {
-      "type": "click",
-      "x": 500,
-      "y": 400,
-      "delay_before_ms": 1500,
-      "description": "Click in post text area"
-    },
-    {
-      "type": "key",
-      "key": "v",
-      "ctrl": true,
-      "delay_before_ms": 500,
-      "description": "Paste post content"
-    },
-    {
-      "type": "wait",
-      "delay_ms": 1500,
-      "description": "Wait for content to paste"
-    },
-    {
-      "type": "click",
-      "x": 350,
-      "y": 550,
-      "delay_before_ms": 1500,
-      "description": "Click 'Photo/Video' button to add media"
-    },
-    {
-      "type": "wait",
-      "delay_ms": 2000,
-      "description": "Wait for file picker or upload area"
-    },
-    {
-      "type": "click",
-      "x": 1475,
-      "y": 505,
-      "delay_before_ms": 1000,
-      "description": "Click COPY FILE LOCATION on OSP panel"
-    },
-    {
-      "type": "wait",
-      "delay_ms": 1000,
-      "description": "Wait for clipboard"
-    },
-    {
-      "type": "click",
-      "x": 600,
-      "y": 570,
-      "delay_before_ms": 1500,
-      "description": "Click File name text box (if File Explorer opened)"
-    },
-    {
-      "type": "key",
-      "key": "a",
-      "ctrl": true,
-      "delay_before_ms": 300,
-      "description": "Select all in file name box"
-    },
-    {
-      "type": "key",
-      "key": "v",
-      "ctrl": true,
-      "delay_before_ms": 300,
-      "description": "Paste file path"
-    },
-    {
-      "type": "wait",
-      "delay_ms": 1000,
-      "description": "Wait for path to paste"
-    },
-    {
-      "type": "click",
-      "x": 633,
-      "y": 596,
-      "delay_before_ms": 1000,
-      "description": "Click Open button in File Explorer"
-    },
-    {
-      "type": "wait",
-      "delay_ms": 5000,
-      "description": "Wait for image/video to upload"
-    },
-    {
-      "type": "click",
-      "x": 500,
-      "y": 650,
-      "delay_before_ms": 2000,
-      "description": "Click 'Post' button to publish"
-    },
-    {
-      "type": "wait",
-      "delay_ms": 5000,
-      "description": "Wait for post to complete"
-    },
-    {
-      "type": "click",
-      "x": 1416,
-      "y": 785,
-      "delay_before_ms": 3000,
-      "description": "Click SUCCESS on OSP panel"
-    },
-    {
-      "type": "wait",
-      "delay_ms": 1000,
-      "description": "Wait before cleanup"
-    },
-    {
-      "type": "click",
-      "x": 500,
-      "y": 400,
-      "delay_before_ms": 500,
-      "description": "Click in Chrome area to focus"
-    },
-    {
-      "type": "key",
-      "key": "w",
-      "ctrl": true,
-      "delay_before_ms": 500,
-      "description": "Close Chrome tab with Ctrl+W"
-    }
-  ]
+  "platform": "facebook",
+  "resolution": "1600x1200"
 }

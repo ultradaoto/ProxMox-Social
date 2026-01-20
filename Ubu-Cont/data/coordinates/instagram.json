@@ -1,0 +1,199 @@
+{
+  "schema_version": "1.0",
+  "platform": "instagram",
+  "resolution": "1600x1200",
+  "last_updated": "2026-01-15T23:54:16.804498Z",
+  "coordinates": {
+    "click_osp_open_url": {
+      "x": 1475,
+      "y": 270,
+      "type": "static",
+      "description": "OSP OPEN URL button (right side)",
+      "expected_x_range": [
+        1400,
+        1550
+      ],
+      "success_count": 0,
+      "failure_count": 0,
+      "consecutive_failures": 0,
+      "last_verified": "2026-01-15T23:43:15.040499Z",
+      "last_healed": null,
+      "healing_history": []
+    },
+    "click_osp_copy_file_location": {
+      "x": 1475,
+      "y": 505,
+      "type": "static",
+      "description": "OSP COPY FILE LOCATION button (right side)",
+      "expected_x_range": [
+        1400,
+        1550
+      ],
+      "success_count": 0,
+      "failure_count": 0,
+      "consecutive_failures": 0,
+      "last_verified": "2026-01-15T23:43:15.040793Z",
+      "last_healed": null,
+      "healing_history": []
+    },
+    "click_osp_copy_body": {
+      "x": 1475,
+      "y": 388,
+      "type": "static",
+      "description": "OSP COPY BODY button (right side)",
+      "expected_x_range": [
+        1400,
+        1550
+      ],
+      "success_count": 0,
+      "failure_count": 0,
+      "consecutive_failures": 0,
+      "last_verified": "2026-01-15T23:43:15.041161Z",
+      "last_healed": null,
+      "healing_history": []
+    },
+    "click_success_or_fail_success": {
+      "x": 1416,
+      "y": 785,
+      "type": "static",
+      "description": "OSP SUCCESS button (right side)",
+      "expected_x_range": [
+        1400,
+        1550
+      ],
+      "success_count": 0,
+      "failure_count": 0,
+      "consecutive_failures": 0,
+      "last_verified": "2026-01-15T23:43:15.045772Z",
+      "last_healed": null,
+      "healing_history": []
+    },
+    "click_success_or_fail_failed": {
+      "x": 1534,
+      "y": 785,
+      "type": "static",
+      "description": "OSP FAILED button (right side)",
+      "expected_x_range": [
+        1500,
+        1600
+      ],
+      "success_count": 0,
+      "failure_count": 0,
+      "consecutive_failures": 0,
+      "last_verified": "2026-01-15T23:43:15.046132Z",
+      "last_healed": null,
+      "healing_history": []
+    },
+    "click_create_post": {
+      "x": 70,
+      "y": 560,
+      "type": "dynamic",
+      "description": "Auto-created from successful click",
+      "expected_x_range": null,
+      "success_count": 2,
+      "failure_count": 0,
+      "consecutive_failures": 0,
+      "last_verified": "2026-01-15T23:52:54.134605Z",
+      "last_healed": null,
+      "healing_history": []
+    },
+    "click_post_option": {
+      "x": 75,
+      "y": 575,
+      "type": "dynamic",
+      "description": "Auto-created from successful click",
+      "expected_x_range": null,
+      "success_count": 2,
+      "failure_count": 0,
+      "consecutive_failures": 0,
+      "last_verified": "2026-01-15T23:52:58.860048Z",
+      "last_healed": null,
+      "healing_history": []
+    },
+    "click_select_from_computer": {
+      "x": 0,
+      "y": 0,
+      "type": "dynamic",
+      "description": "Auto-created from failure",
+      "expected_x_range": null,
+      "success_count": 2,
+      "failure_count": 1,
+      "consecutive_failures": 0,
+      "last_verified": "2026-01-15T23:53:03.705582Z",
+      "last_healed": null,
+      "healing_history": []
+    },
+    "click_file_name_box": {
+      "x": 800,
+      "y": 800,
+      "type": "dynamic",
+      "description": "Auto-created from successful click",
+      "expected_x_range": null,
+      "success_count": 2,
+      "failure_count": 0,
+      "consecutive_failures": 0,
+      "last_verified": "2026-01-15T23:53:12.451601Z",
+      "last_healed": null,
+      "healing_history": []
+    },
+    "click_resize_icon": {
+      "x": 283,
+      "y": 1033,
+      "type": "dynamic",
+      "description": "Auto-created from successful click",
+      "expected_x_range": null,
+      "success_count": 2,
+      "failure_count": 0,
+      "consecutive_failures": 0,
+      "last_verified": "2026-01-15T23:53:34.262484Z",
+      "last_healed": null,
+      "healing_history": []
+    },
+    "select_4_5_ratio": {
+      "x": 0,
+      "y": 0,
+      "type": "dynamic",
+      "description": "Auto-created from failure",
+      "expected_x_range": null,
+      "success_count": 2,
+      "failure_count": 1,
+      "consecutive_failures": 0,
+      "last_verified": "2026-01-15T23:53:38.054335Z",
+      "last_healed": null,
+      "healing_history": []
+    },
+    "click_caption_area": {
+      "x": 1050,
+      "y": 450,
+      "type": "dynamic",
+      "description": "Auto-created from successful click",
+      "expected_x_range": null,
+      "success_count": 2,
+      "failure_count": 0,
+      "consecutive_failures": 0,
+      "last_verified": "2026-01-15T23:54:16.804169Z",
+      "last_healed": null,
+      "healing_history": []
+    },
+    "click_open_button": {
+      "x": 638,
+      "y": 567,
+      "type": "dynamic",
+      "description": "Auto-created from successful click",
+      "expected_x_range": null,
+      "success_count": 1,
+      "failure_count": 0,
+      "consecutive_failures": 0,
+      "last_verified": "2026-01-15T23:53:24.622348Z",
+      "last_healed": null,
+      "healing_history": []
+    }
+  },
+  "stats": {
+    "total_clicks": 17,
+    "successful_clicks": 15,
+    "failed_clicks": 2,
+    "healing_events": 0,
+    "last_healing": null
+  }
+}

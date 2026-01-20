@@ -19,6 +19,8 @@ class TestCoordinateStore:
         """Create a temporary file path for testing."""
         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
             temp_path = f.name
+        # Delete the temp file so we test with non-existent path
+        Path(temp_path).unlink(missing_ok=True)
         yield temp_path
         # Cleanup
         Path(temp_path).unlink(missing_ok=True)
