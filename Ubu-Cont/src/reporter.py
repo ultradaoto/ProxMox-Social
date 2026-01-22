@@ -7,7 +7,7 @@ to report success, failure, and status updates.
 
 import asyncio
 import aiohttp
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from datetime import datetime
 from enum import Enum
 
@@ -135,27 +135,24 @@ class Reporter:
         post_id: str,
         error_message: str,
         step: Optional[str] = None,
-        screenshot_path: Optional[str] = None,
-        retry: bool = True
+        screenshot_path: Optional[str] = None
     ) -> bool:
         """
         Report failed post.
-
-        Per GUI-QUEUE-API.md, the payload should be:
+        
+        Per W10-WORKER-API.md, the payload should be:
         {
             "id": "uuid",
             "error": "error_message",
-            "screenshot": "base64_optional",
-            "retry": true
+            "screenshot": "base64_optional"
         }
-
+        
         Args:
             post_id: Post ID
             error_message: Description of what failed
             step: Which step failed (appended to error message)
             screenshot_path: Path to debug screenshot (converted to base64)
-            retry: Whether to retry this post
-
+            
         Returns:
             True if report was accepted
         """
@@ -166,8 +163,7 @@ class Reporter:
 
         payload = {
             "id": post_id,
-            "error": full_error,
-            "retry": retry
+            "error": full_error
         }
 
         # TODO: Convert screenshot_path to base64 if provided

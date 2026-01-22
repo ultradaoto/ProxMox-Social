@@ -2,7 +2,7 @@
 Main validation logic - the core of the system.
 """
 import logging
-from typing import Dict, Optional, List, Tuple
+from typing import Dict, Optional, List, Tuple, Any
 from dataclasses import dataclass
 
 from .database import ValidationDatabase
@@ -30,6 +30,7 @@ class WorkflowValidationResult:
     click_results: List[ValidationResult]
     failure_index: Optional[int]
     failure_reason: Optional[str]
+    failed_clicks: Optional[List[Dict]] = None  # For self-healing: [{click_index, similarity, screenshot, baseline}]
 
 
 class WorkflowValidator:
@@ -181,6 +182,7 @@ class WorkflowValidator:
             )
         
         results = []
+        failed_clicks = []  # For self-healing
         failure_index = None
         failure_reason = None
         
@@ -224,10 +226,21 @@ class WorkflowValidator:
                 baseline_exists=True
             ))
             
-            if not is_match and failure_index is None:
-                failure_index = action_index
-                failure_reason = f"Click {action_index} mismatch: {score:.2%} similarity (need {threshold:.2%})"
-                self.logger.warning(failure_reason)
+            if not is_match:
+                # Track for self-healing
+                failed_clicks.append({
+                    'click_index': action_index,
+                    'similarity': score,
+                    'screenshot': captured_image,
+                    'baseline': baseline['baseline_image'],
+                    'x': baseline['click_x'],
+                    'y': baseline['click_y']
+                })
+                
+                if failure_index is None:
+                    failure_index = action_index
+                    failure_reason = f"Click {action_index} mismatch: {score:.2%} similarity (need {threshold:.2%})"
+                    self.logger.warning(failure_reason)
         
         validated_with_baselines = [r for r in results if r.baseline_exists]
         success = all(r.is_valid for r in validated_with_baselines) if validated_with_baselines else True
@@ -246,7 +259,8 @@ class WorkflowValidator:
             success=success,
             click_results=results,
             failure_index=failure_index,
-            failure_reason=failure_reason
+            failure_reason=failure_reason,
+            failed_clicks=failed_clicks if failed_clicks else None
         )
         
         self.logger.info(f"Validation complete: {'SUCCESS' if success else 'FAILED'} - {len(results)} clicks checked")

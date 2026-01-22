@@ -29,7 +29,7 @@ workflows:
 api:
   base_url: "https://social.sterlingcooley.com/api"
   api_key: "${API_KEY}"  # Loaded from environment variable
-  poll_interval: 60     # Seconds between queue checks
+  poll_interval: 30     # Seconds between queue checks (v2.0 recommended)
   request_timeout: 10   # API request timeout
 
 # Logging

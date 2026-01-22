@@ -17,7 +17,7 @@
       "description": "Click Create Post (+) button in Instagram sidebar (LEFT side, X < 200)",
       "type": "click",
       "x": 64,
-      "y": 557
+      "y": 696
     },
     {
       "delay_ms": 2000,
@@ -28,8 +28,8 @@
       "delay_before_ms": 1500,
       "description": "Click 'Post' option in menu (LEFT side, X < 400)",
       "type": "click",
-      "x": 95,
-      "y": 599
+      "x": 63,
+      "y": 739
     },
     {
       "delay_ms": 2000,

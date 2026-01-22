@@ -5,11 +5,13 @@ Loads and executes workflows from JSON recording files created via the web UI.
 This replaces the hardcoded Python workflow steps with the user's saved recordings.
 
 Includes Visual Validation System integration for screenshot-based failure detection.
+Includes Self-Healing System for automatic coordinate fixes when UI changes.
 """
 
 import asyncio
 import json
 import time
+import os
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 
@@ -29,6 +31,13 @@ try:
 except ImportError:
     VALIDATION_AVAILABLE = False
 
+# Self-Healing imports
+try:
+    from src.self_healing import WorkflowHealer, SIMILARITY_FAILURE_THRESHOLD
+    SELF_HEALING_AVAILABLE = True
+except ImportError:
+    SELF_HEALING_AVAILABLE = False
+
 logger = get_logger(__name__)
 
 # Validation database path
@@ -43,7 +52,7 @@ class JSONWorkflow(AsyncBaseWorkflow):
     ensuring the workflow matches what the user tested and verified.
     """
     
-    def __init__(self, vnc, vision, input_injector, recording_path: str, platform_name: str, enable_validation: bool = True):
+    def __init__(self, vnc, vision, input_injector, recording_path: str, platform_name: str, enable_validation: bool = True, enable_self_healing: bool = True):
         """
         Initialize JSON workflow.
         
@@ -54,6 +63,7 @@ class JSONWorkflow(AsyncBaseWorkflow):
             recording_path: Path to the JSON recording file
             platform_name: Name of the platform (instagram, skool, etc.)
             enable_validation: Enable visual validation system
+            enable_self_healing: Enable automatic coordinate fixing when UI changes
         """
         super().__init__(vnc, vision, input_injector)
         self.recording_path = Path(recording_path)
@@ -69,10 +79,18 @@ class JSONWorkflow(AsyncBaseWorkflow):
         self._validation_run_id: Optional[int] = None
         self._click_index: int = 0  # Track click number separately from action index
         
+        # Self-healing
+        self.enable_self_healing = enable_self_healing and SELF_HEALING_AVAILABLE
+        self.healer: Optional[WorkflowHealer] = None
+        self._healing_triggered = False
+        
         if self.enable_validation:
             self._init_validation()
         
-        # Load the recording
+        if self.enable_self_healing:
+            self._init_self_healing()
+        
+        # Load the recording (will reload fresh each execute)
         self._load_recording()
     
     def _init_validation(self):
@@ -85,6 +103,34 @@ class JSONWorkflow(AsyncBaseWorkflow):
         except Exception as e:
             logger.warning(f"Failed to initialize validation: {e}")
             self.enable_validation = False
+    
+    def _init_self_healing(self):
+        """Initialize self-healing system."""
+        try:
+            # Try config.json first, then environment
+            api_key = None
+            config_path = Path(__file__).parent.parent.parent / "config.json"
+            if config_path.exists():
+                try:
+                    with open(config_path) as f:
+                        config = json.load(f)
+                        api_key = config.get("vision", {}).get("api_key", "")
+                except Exception:
+                    pass
+            
+            if not api_key:
+                api_key = os.getenv("OPENROUTER_API_KEY", "")
+            
+            if not api_key:
+                logger.warning("No OpenRouter API key found - self-healing disabled")
+                self.enable_self_healing = False
+                return
+            
+            self.healer = WorkflowHealer(api_key=api_key)
+            logger.info("Self-healing system initialized")
+        except Exception as e:
+            logger.warning(f"Failed to initialize self-healing: {e}")
+            self.enable_self_healing = False
     
     def _load_recording(self):
         """Load the JSON recording file."""
@@ -120,9 +166,13 @@ class JSONWorkflow(AsyncBaseWorkflow):
         
         Overrides base execute to run actions sequentially from JSON.
         Includes visual validation for click actions.
+        Includes self-healing for automatic coordinate fixes.
         """
         self.current_post = post
         start_time = time.time()
+        
+        # ALWAYS reload JSON fresh to pick up any changes (fixes caching issue)
+        self._load_recording()
         
         logger.info("=" * 60)
         logger.info(f"Starting {self.platform_name} workflow (JSON-based)")
@@ -130,6 +180,7 @@ class JSONWorkflow(AsyncBaseWorkflow):
         logger.info(f"Post ID: {post.id}")
         logger.info(f"Total actions: {len(self.actions)}")
         logger.info(f"Visual Validation: {'ENABLED' if self.enable_validation else 'DISABLED'}")
+        logger.info(f"Self-Healing: {'ENABLED' if self.enable_self_healing else 'DISABLED'}")
         logger.info("=" * 60)
         
         # Start validation run
@@ -181,6 +232,14 @@ class JSONWorkflow(AsyncBaseWorkflow):
                     if not validation_passed:
                         validation_failure_msg = val_result.failure_reason
                         logger.warning(f"Visual validation FAILED: {validation_failure_msg}")
+                        
+                        # Check for self-healing opportunity
+                        if self.enable_self_healing and self.healer:
+                            healed = await self._attempt_self_healing(val_result)
+                            if healed:
+                                logger.info("Self-healing succeeded - workflow updated")
+                                validation_passed = True
+                                validation_failure_msg = None
                 except Exception as e:
                     logger.error(f"Validation error: {e}")
                     # Don't fail workflow on validation error, just log it
@@ -289,6 +348,71 @@ class JSONWorkflow(AsyncBaseWorkflow):
                 self._click_index += 1  # Increment after capture
             except Exception as e:
                 logger.warning(f"Failed to capture validation screenshot: {e}")
+    
+    async def _attempt_self_healing(self, val_result) -> bool:
+        """
+        Attempt to self-heal failed clicks using vision AI.
+        
+        Args:
+            val_result: ValidationResult with failed_clicks list
+            
+        Returns:
+            True if healing succeeded, False otherwise
+        """
+        if not hasattr(val_result, 'failed_clicks') or not val_result.failed_clicks:
+            return False
+        
+        workflow_name = self.recording_path.stem
+        healed_any = False
+        
+        for failed in val_result.failed_clicks:
+            click_index = failed.get('click_index', failed.get('action_index'))
+            similarity = failed.get('similarity', 1.0)
+            
+            # Only heal if similarity < 30% (definite UI change)
+            if similarity >= SIMILARITY_FAILURE_THRESHOLD:
+                logger.info(f"Click {click_index} similarity {similarity:.1%} >= {SIMILARITY_FAILURE_THRESHOLD:.0%}, skipping")
+                continue
+            
+            logger.info(f"Click {click_index} similarity {similarity:.1%} < {SIMILARITY_FAILURE_THRESHOLD:.0%} - attempting self-healing")
+            
+            # Get screenshots for healing
+            failed_screenshot = failed.get('screenshot')
+            baseline_screenshot = failed.get('baseline')
+            
+            if not failed_screenshot:
+                logger.warning(f"No failed screenshot for click {click_index}")
+                continue
+            
+            # Get full screenshot function
+            def get_full_screenshot():
+                shared_path = "/dev/shm/vnc_latest.png"
+                if os.path.exists(shared_path):
+                    with open(shared_path, 'rb') as f:
+                        return f.read()
+                return None
+            
+            try:
+                result = await asyncio.to_thread(
+                    self.healer.heal,
+                    workflow_name,
+                    click_index,
+                    similarity,
+                    failed_screenshot,
+                    baseline_screenshot,
+                    get_full_screenshot
+                )
+                
+                if result.success:
+                    logger.info(f"Healed click {click_index}: ({result.old_coordinates}) -> ({result.new_coordinates})")
+                    healed_any = True
+                else:
+                    logger.warning(f"Failed to heal click {click_index}: {result.error_message}")
+                    
+            except Exception as e:
+                logger.error(f"Self-healing error for click {click_index}: {e}")
+        
+        return healed_any
     
     async def _execute_click(self, action: Dict[str, Any], action_index: int = 0) -> StepResult:
         """Execute a click action."""

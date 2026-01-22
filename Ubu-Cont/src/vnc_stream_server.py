@@ -14,6 +14,7 @@ import logging
 import multiprocessing
 import json
 import numpy as np
+from pathlib import Path
 from PIL import Image
 from flask import Flask, Response, render_template_string, jsonify, request
 
@@ -269,7 +270,7 @@ VIEWER_HTML = """
     <div class="main-panel">
         <div class="top-bar">
             <h1>Windows 10 Live Control</h1>
-            <div class="status">Streaming from {{ vnc_host }} | <span id="mode-indicator">Interactive Mode</span> | <a href="/runs/" style="color:#60a5fa;">Runs</a></div>
+            <div class="status">Streaming from {{ vnc_host }} | <span id="mode-indicator">Interactive Mode</span> | <a href="/runs/" style="color:#60a5fa;">Runs</a> | <a href="/heal/" style="color:#f59e0b;">Heal</a></div>
         </div>
         
         <div class="container" tabindex="0" id="view-container">
@@ -2454,6 +2455,1108 @@ RUNS_COMPARISON_HTML = """
         }
         
         loadWorkflows();
+    </script>
+</body>
+</html>
+"""
+
+# ============================================================================
+# SELF-HEALING DASHBOARD
+# ============================================================================
+
+# Import healing store
+try:
+    # Try relative import first (when running from Ubu-Cont directory)
+    from src.self_healing import get_healing_store, SIMILARITY_FAILURE_THRESHOLD, MAX_HEALING_ATTEMPTS, CONFIDENCE_THRESHOLD
+    from src.self_healing.config import WORKFLOW_ACTION_DESCRIPTIONS
+    HEALING_AVAILABLE = True
+    logger.info("Self-healing module loaded successfully")
+except ImportError:
+    try:
+        # Try as sibling module (when running from src directory)
+        from self_healing import get_healing_store, SIMILARITY_FAILURE_THRESHOLD, MAX_HEALING_ATTEMPTS, CONFIDENCE_THRESHOLD
+        from self_healing.config import WORKFLOW_ACTION_DESCRIPTIONS
+        HEALING_AVAILABLE = True
+        logger.info("Self-healing module loaded successfully (sibling import)")
+    except ImportError as e:
+        HEALING_AVAILABLE = False
+        logger.warning(f"Self-healing module not available: {e}")
+        def get_healing_store():
+            return None
+        SIMILARITY_FAILURE_THRESHOLD = 0.3
+        MAX_HEALING_ATTEMPTS = 3
+        CONFIDENCE_THRESHOLD = 0.7
+        WORKFLOW_ACTION_DESCRIPTIONS = {}
+
+@app.route('/heal/api/status')
+def heal_api_status():
+    """Get current healing system status."""
+    if not HEALING_AVAILABLE:
+        return jsonify({'error': 'Self-healing not available', 'available': False})
+    
+    store = get_healing_store()
+    if not store:
+        return jsonify({'error': 'Healing store not initialized', 'available': False})
+    
+    status = store.get_status()
+    status['available'] = True
+    status['config'] = {
+        'similarity_threshold': SIMILARITY_FAILURE_THRESHOLD,
+        'max_attempts': MAX_HEALING_ATTEMPTS,
+        'confidence_threshold': CONFIDENCE_THRESHOLD
+    }
+    return jsonify(status)
+
+@app.route('/heal/api/events')
+def heal_api_events():
+    """Get recent healing events."""
+    if not HEALING_AVAILABLE:
+        return jsonify({'events': []})
+    
+    store = get_healing_store()
+    if not store:
+        return jsonify({'events': []})
+    
+    limit = request.args.get('limit', 50, type=int)
+    return jsonify({'events': store.get_events(limit)})
+
+@app.route('/heal/api/toggle', methods=['POST'])
+def heal_api_toggle():
+    """Enable/disable self-healing."""
+    if not HEALING_AVAILABLE:
+        return jsonify({'error': 'Self-healing not available'}), 400
+    
+    store = get_healing_store()
+    if not store:
+        return jsonify({'error': 'Healing store not initialized'}), 400
+    
+    data = request.json or {}
+    enabled = data.get('enabled', not store.enabled)
+    store.enabled = enabled
+    
+    return jsonify({'enabled': store.enabled})
+
+@app.route('/heal/api/clear', methods=['POST'])
+def heal_api_clear():
+    """Clear healing history."""
+    if not HEALING_AVAILABLE:
+        return jsonify({'error': 'Self-healing not available'}), 400
+    
+    store = get_healing_store()
+    if store:
+        store.clear_history()
+    
+    return jsonify({'success': True})
+
+@app.route('/heal/api/descriptions')
+def heal_api_descriptions():
+    """Get action descriptions for all workflows."""
+    if not HEALING_AVAILABLE:
+        return jsonify({})
+    
+    return jsonify(WORKFLOW_ACTION_DESCRIPTIONS)
+
+@app.route('/heal/api/logs')
+def heal_api_logs():
+    """Get live logs for monitoring."""
+    if not HEALING_AVAILABLE:
+        return jsonify({'logs': []})
+    
+    store = get_healing_store()
+    if not store:
+        return jsonify({'logs': []})
+    
+    since_id = request.args.get('since', 0, type=int)
+    if since_id > 0:
+        return jsonify({'logs': store.get_logs(since_id)})
+    else:
+        return jsonify({'logs': store.get_recent_logs(100)})
+
+@app.route('/heal/api/scan/<workflow_name>', methods=['POST'])
+def heal_api_scan(workflow_name):
+    """Scan a workflow and identify clicks needing healing."""
+    if not HEALING_AVAILABLE:
+        return jsonify({'error': 'Self-healing not available'}), 400
+    
+    try:
+        from self_healing.manual_heal import get_manual_healer
+        healer = get_manual_healer()
+        result = healer.scan_workflow(workflow_name)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/heal/api/heal/<workflow_name>', methods=['POST'])
+def heal_api_heal(workflow_name):
+    """Trigger healing for a workflow."""
+    if not HEALING_AVAILABLE:
+        return jsonify({'error': 'Self-healing not available'}), 400
+    
+    try:
+        from self_healing.manual_heal import get_manual_healer
+        healer = get_manual_healer()
+        
+        data = request.json or {}
+        click_indices = data.get('click_indices')  # Optional: specific clicks to heal
+        
+        result = healer.heal_workflow(workflow_name, click_indices)
+        return jsonify(result)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/heal/api/heal-click/<workflow_name>/<int:click_index>', methods=['POST'])
+def heal_api_heal_click(workflow_name, click_index):
+    """Heal a single specific click."""
+    if not HEALING_AVAILABLE:
+        return jsonify({'error': 'Self-healing not available'}), 400
+    
+    try:
+        from self_healing.manual_heal import get_manual_healer
+        healer = get_manual_healer()
+        
+        # Get click info and baseline
+        clicks = healer.get_workflow_clicks(workflow_name)
+        click = next((c for c in clicks if c['click_index'] == click_index), None)
+        if not click:
+            return jsonify({'error': f'Click {click_index} not found'}), 404
+        
+        baselines = healer.get_baselines(workflow_name)
+        baseline = baselines.get(click_index)
+        if not baseline:
+            return jsonify({'error': f'No baseline for click {click_index}'}), 404
+        
+        current = healer.capture_current_screenshot(click['x'], click['y'])
+        if not current:
+            return jsonify({'error': 'Could not capture current screenshot'}), 500
+        
+        similarity = healer.compare_images(baseline, current)
+        
+        result = healer.heal_click(
+            workflow_name=workflow_name,
+            click_index=click_index,
+            old_x=click['x'],
+            old_y=click['y'],
+            baseline=baseline,
+            current=current,
+            similarity=similarity
+        )
+        return jsonify(result)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/heal/api/workflows')
+def heal_api_workflows():
+    """Get list of available workflows."""
+    workflows = []
+    # __file__ is src/vnc_stream_server.py, so parent.parent is Ubu-Cont
+    recordings_dir = Path(__file__).resolve().parent.parent / 'recordings'
+    if recordings_dir.exists():
+        for f in recordings_dir.glob('*_default.json'):
+            workflows.append(f.stem)
+    return jsonify({'workflows': sorted(workflows)})
+
+@app.route('/heal/')
+def heal_dashboard():
+    """Self-healing monitoring dashboard."""
+    return render_template_string(HEAL_DASHBOARD_HTML)
+
+HEAL_DASHBOARD_HTML = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Self-Healing Dashboard</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        :root {
+            --bg: #0a0f1a;
+            --panel: #101828;
+            --panel-2: #1a2744;
+            --border: #1f2f4f;
+            --text: #e2e8f0;
+            --muted: #64748b;
+            --accent: #f59e0b;
+            --accent-2: #10b981;
+            --danger: #ef4444;
+            --success: #22c55e;
+            --warning: #eab308;
+        }
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+        }
+        .header {
+            background: var(--panel);
+            border-bottom: 1px solid var(--border);
+            padding: 16px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .header h1 {
+            font-size: 1.4em;
+            font-weight: 600;
+            color: var(--accent);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .header h1::before {
+            content: '🔧';
+        }
+        .header-links {
+            display: flex;
+            gap: 16px;
+        }
+        .header-links a {
+            color: #60a5fa;
+            text-decoration: none;
+            font-size: 0.9em;
+        }
+        .header-links a:hover { text-decoration: underline; }
+        
+        .main {
+            display: grid;
+            grid-template-columns: 340px 1fr;
+            gap: 20px;
+            padding: 20px 24px;
+            max-width: 1800px;
+            margin: 0 auto;
+        }
+        
+        .sidebar {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+        
+        .card {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+        .card-header {
+            background: var(--panel-2);
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .card-header h2 {
+            font-size: 0.95em;
+            font-weight: 600;
+            color: var(--accent);
+        }
+        .card-body {
+            padding: 16px;
+        }
+        
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-weight: 500;
+        }
+        .status-indicator.enabled {
+            background: rgba(34, 197, 94, 0.15);
+            color: var(--success);
+        }
+        .status-indicator.disabled {
+            background: rgba(239, 68, 68, 0.15);
+            color: var(--danger);
+        }
+        .status-indicator.unavailable {
+            background: rgba(100, 116, 139, 0.15);
+            color: var(--muted);
+        }
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+        .enabled .status-dot { background: var(--success); }
+        .disabled .status-dot { background: var(--danger); }
+        .unavailable .status-dot { background: var(--muted); animation: none; }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+        .stat-box {
+            background: var(--panel-2);
+            border-radius: 8px;
+            padding: 12px;
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 1.8em;
+            font-weight: 700;
+            color: var(--text);
+        }
+        .stat-label {
+            font-size: 0.75em;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-top: 4px;
+        }
+        .stat-box.success .stat-value { color: var(--success); }
+        .stat-box.failed .stat-value { color: var(--danger); }
+        .stat-box.rate .stat-value { color: var(--accent); }
+        
+        .config-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid var(--border);
+            font-size: 0.85em;
+        }
+        .config-item:last-child { border-bottom: none; }
+        .config-label { color: var(--muted); }
+        .config-value { color: var(--text); font-weight: 500; }
+        
+        .control-buttons {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .btn {
+            padding: 8px 16px;
+            border-radius: 6px;
+            border: none;
+            font-size: 0.85em;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn-primary {
+            background: var(--accent);
+            color: #000;
+        }
+        .btn-primary:hover { background: #d97706; }
+        .btn-success {
+            background: var(--success);
+            color: #000;
+        }
+        .btn-success:hover { background: #16a34a; }
+        .btn-danger {
+            background: var(--danger);
+            color: #fff;
+        }
+        .btn-danger:hover { background: #dc2626; }
+        .btn-secondary {
+            background: var(--panel-2);
+            color: var(--text);
+            border: 1px solid var(--border);
+        }
+        .btn-secondary:hover { background: var(--border); }
+        
+        .workflow-list {
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .workflow-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 12px;
+            background: var(--panel-2);
+            border-radius: 6px;
+            margin-bottom: 8px;
+            font-size: 0.85em;
+        }
+        .workflow-item:last-child { margin-bottom: 0; }
+        .workflow-name { font-weight: 500; }
+        .workflow-stats {
+            display: flex;
+            gap: 12px;
+            font-size: 0.8em;
+        }
+        .workflow-stats span { color: var(--muted); }
+        .workflow-stats .success { color: var(--success); }
+        .workflow-stats .failed { color: var(--danger); }
+        
+        .right-panels {
+            display: flex;
+            flex-direction: column;
+        }
+        .events-panel {
+            flex: 1;
+        }
+        @media (max-width: 1199px) {
+            .main {
+                grid-template-columns: 1fr;
+            }
+        }
+        
+        .events-list {
+            max-height: 600px;
+            overflow-y: auto;
+        }
+        .event-item {
+            background: var(--panel-2);
+            border-radius: 8px;
+            padding: 14px;
+            margin-bottom: 12px;
+            border-left: 4px solid var(--border);
+        }
+        .event-item:last-child { margin-bottom: 0; }
+        .event-item.success { border-left-color: var(--success); }
+        .event-item.failed { border-left-color: var(--danger); }
+        .event-item.started, .event-item.ai_request, .event-item.ai_response {
+            border-left-color: var(--warning);
+        }
+        
+        .event-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        .event-workflow {
+            font-weight: 600;
+            color: var(--accent);
+        }
+        .event-time {
+            font-size: 0.75em;
+            color: var(--muted);
+        }
+        .event-status {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.7em;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        .event-status.success { background: rgba(34, 197, 94, 0.2); color: var(--success); }
+        .event-status.failed { background: rgba(239, 68, 68, 0.2); color: var(--danger); }
+        .event-status.started { background: rgba(234, 179, 8, 0.2); color: var(--warning); }
+        .event-status.ai_request { background: rgba(59, 130, 246, 0.2); color: #3b82f6; }
+        .event-status.ai_response { background: rgba(168, 85, 247, 0.2); color: #a855f7; }
+        
+        .event-details {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 8px;
+            font-size: 0.8em;
+        }
+        .event-detail {
+            background: var(--panel);
+            padding: 6px 10px;
+            border-radius: 4px;
+        }
+        .event-detail-label {
+            color: var(--muted);
+            font-size: 0.85em;
+        }
+        .event-detail-value {
+            color: var(--text);
+            font-weight: 500;
+        }
+        
+        .event-reasoning {
+            margin-top: 8px;
+            padding: 8px 10px;
+            background: var(--panel);
+            border-radius: 4px;
+            font-size: 0.8em;
+            color: var(--muted);
+            font-style: italic;
+        }
+        
+        .no-events {
+            text-align: center;
+            padding: 40px;
+            color: var(--muted);
+        }
+        .no-events .icon {
+            font-size: 3em;
+            margin-bottom: 12px;
+        }
+        
+        .active-healing {
+            background: linear-gradient(45deg, rgba(234, 179, 8, 0.1), rgba(245, 158, 11, 0.1));
+            border: 1px solid var(--warning);
+            animation: activeGlow 2s infinite;
+        }
+        @keyframes activeGlow {
+            0%, 100% { box-shadow: 0 0 5px rgba(245, 158, 11, 0.3); }
+            50% { box-shadow: 0 0 20px rgba(245, 158, 11, 0.5); }
+        }
+        
+        .refresh-indicator {
+            font-size: 0.75em;
+            color: var(--muted);
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Self-Healing Dashboard</h1>
+        <div class="header-links">
+            <a href="/">Live Control</a>
+            <a href="/runs/">Runs</a>
+            <span class="refresh-indicator">Auto-refresh: <span id="refresh-countdown">5</span>s</span>
+        </div>
+    </div>
+    
+    <div class="main">
+        <div class="sidebar">
+            <!-- System Status -->
+            <div class="card">
+                <div class="card-header">
+                    <h2>System Status</h2>
+                </div>
+                <div class="card-body">
+                    <div id="status-indicator" class="status-indicator unavailable">
+                        <div class="status-dot"></div>
+                        <span>Loading...</span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Statistics -->
+            <div class="card">
+                <div class="card-header">
+                    <h2>Statistics</h2>
+                </div>
+                <div class="card-body">
+                    <div class="stats-grid">
+                        <div class="stat-box">
+                            <div class="stat-value" id="stat-total">0</div>
+                            <div class="stat-label">Total Attempts</div>
+                        </div>
+                        <div class="stat-box rate">
+                            <div class="stat-value" id="stat-rate">0%</div>
+                            <div class="stat-label">Success Rate</div>
+                        </div>
+                        <div class="stat-box success">
+                            <div class="stat-value" id="stat-success">0</div>
+                            <div class="stat-label">Successful</div>
+                        </div>
+                        <div class="stat-box failed">
+                            <div class="stat-value" id="stat-failed">0</div>
+                            <div class="stat-label">Failed</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Configuration -->
+            <div class="card">
+                <div class="card-header">
+                    <h2>Configuration</h2>
+                </div>
+                <div class="card-body">
+                    <div class="config-item">
+                        <span class="config-label">Similarity Threshold</span>
+                        <span class="config-value" id="config-threshold">-</span>
+                    </div>
+                    <div class="config-item">
+                        <span class="config-label">Max Attempts</span>
+                        <span class="config-value" id="config-attempts">-</span>
+                    </div>
+                    <div class="config-item">
+                        <span class="config-label">AI Confidence</span>
+                        <span class="config-value" id="config-confidence">-</span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Controls -->
+            <div class="card">
+                <div class="card-header">
+                    <h2>Controls</h2>
+                </div>
+                <div class="card-body">
+                    <div class="control-buttons">
+                        <button class="btn btn-success" id="btn-enable" onclick="toggleHealing(true)">Enable</button>
+                        <button class="btn btn-danger" id="btn-disable" onclick="toggleHealing(false)">Disable</button>
+                        <button class="btn btn-secondary" onclick="clearHistory()">Clear Logs</button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Manual Heal -->
+            <div class="card" style="border-color: var(--accent);">
+                <div class="card-header">
+                    <h2>Manual Heal</h2>
+                </div>
+                <div class="card-body">
+                    <div style="margin-bottom:12px;">
+                        <label style="font-size:0.8em;color:var(--muted);display:block;margin-bottom:4px;">Workflow</label>
+                        <select id="workflow-select" style="width:100%;padding:8px;background:var(--panel-2);border:1px solid var(--border);border-radius:6px;color:var(--text);">
+                            <option value="">Select workflow...</option>
+                        </select>
+                    </div>
+                    <div class="control-buttons">
+                        <button class="btn btn-secondary" onclick="scanWorkflow()" id="btn-scan">Scan</button>
+                        <button class="btn btn-primary" onclick="healWorkflow()" id="btn-heal">Heal All</button>
+                    </div>
+                    <div id="scan-results" style="margin-top:12px;font-size:0.85em;"></div>
+                </div>
+            </div>
+            
+            <!-- Workflows Stats -->
+            <div class="card">
+                <div class="card-header">
+                    <h2>By Workflow</h2>
+                </div>
+                <div class="card-body">
+                    <div class="workflow-list" id="workflow-list">
+                        <div class="no-events">No workflow data</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="right-panels">
+            <!-- Live Logs Panel -->
+            <div class="card" style="margin-bottom:16px;">
+                <div class="card-header">
+                    <h2>Live Logs</h2>
+                    <button class="btn btn-secondary" style="padding:4px 8px;font-size:0.75em;" onclick="clearLogs()">Clear</button>
+                </div>
+                <div class="card-body" style="padding:0;">
+                    <div id="live-logs" style="height:250px;overflow-y:auto;font-family:monospace;font-size:0.75em;background:#000;padding:8px;">
+                        <div style="color:var(--muted);">Waiting for events...</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Events Panel -->
+            <div class="card events-panel">
+                <div class="card-header">
+                    <h2>Healing Events</h2>
+                    <span id="active-count" style="color:var(--warning);font-size:0.85em;"></span>
+                </div>
+                <div class="card-body">
+                    <div class="events-list" id="events-list">
+                        <div class="no-events">
+                            <div class="icon">🔧</div>
+                            <div>No healing events yet</div>
+                            <div style="font-size:0.85em;margin-top:8px;">Use Manual Heal to test the system</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        let refreshInterval;
+        let countdown = 5;
+        
+        function formatTime(isoString) {
+            if (!isoString) return '-';
+            const d = new Date(isoString);
+            return d.toLocaleTimeString();
+        }
+        
+        function formatCoords(coords) {
+            if (!coords || !Array.isArray(coords)) return '-';
+            return `(${coords[0]}, ${coords[1]})`;
+        }
+        
+        async function fetchStatus() {
+            try {
+                const resp = await fetch('/heal/api/status');
+                return await resp.json();
+            } catch (e) {
+                console.error('Failed to fetch status:', e);
+                return null;
+            }
+        }
+        
+        function updateStatusIndicator(status) {
+            const el = document.getElementById('status-indicator');
+            if (!status || !status.available) {
+                el.className = 'status-indicator unavailable';
+                el.innerHTML = '<div class="status-dot"></div><span>Not Available</span>';
+                return;
+            }
+            
+            if (status.stats.enabled) {
+                el.className = 'status-indicator enabled';
+                el.innerHTML = '<div class="status-dot"></div><span>Active & Monitoring</span>';
+            } else {
+                el.className = 'status-indicator disabled';
+                el.innerHTML = '<div class="status-dot"></div><span>Disabled</span>';
+            }
+            
+            // Update button states
+            document.getElementById('btn-enable').disabled = status.stats.enabled;
+            document.getElementById('btn-disable').disabled = !status.stats.enabled;
+        }
+        
+        function updateStats(status) {
+            if (!status || !status.stats) return;
+            
+            const stats = status.stats;
+            document.getElementById('stat-total').textContent = stats.total_attempts;
+            document.getElementById('stat-success').textContent = stats.successful;
+            document.getElementById('stat-failed').textContent = stats.failed;
+            document.getElementById('stat-rate').textContent = stats.success_rate.toFixed(0) + '%';
+            
+            // Config
+            if (status.config) {
+                document.getElementById('config-threshold').textContent = (status.config.similarity_threshold * 100).toFixed(0) + '%';
+                document.getElementById('config-attempts').textContent = status.config.max_attempts;
+                document.getElementById('config-confidence').textContent = (status.config.confidence_threshold * 100).toFixed(0) + '%';
+            }
+            
+            // Active count
+            const activeEl = document.getElementById('active-count');
+            if (stats.active_count > 0) {
+                activeEl.textContent = `${stats.active_count} healing in progress...`;
+            } else {
+                activeEl.textContent = '';
+            }
+            
+            // Workflows
+            updateWorkflowList(stats.by_workflow);
+        }
+        
+        function updateWorkflowList(byWorkflow) {
+            const el = document.getElementById('workflow-list');
+            if (!byWorkflow || Object.keys(byWorkflow).length === 0) {
+                el.innerHTML = '<div class="no-events" style="padding:12px;">No workflow data yet</div>';
+                return;
+            }
+            
+            let html = '';
+            for (const [name, data] of Object.entries(byWorkflow)) {
+                const displayName = name.replace('_default', '').replace('_', ' ');
+                html += `
+                    <div class="workflow-item">
+                        <span class="workflow-name">${displayName}</span>
+                        <div class="workflow-stats">
+                            <span class="success">${data.success} ✓</span>
+                            <span class="failed">${data.failed} ✗</span>
+                            <span>${data.attempts} total</span>
+                        </div>
+                    </div>
+                `;
+            }
+            el.innerHTML = html;
+        }
+        
+        function updateEvents(status) {
+            const el = document.getElementById('events-list');
+            
+            // Combine active and recent
+            const active = status.active || [];
+            const recent = status.recent || [];
+            
+            if (active.length === 0 && recent.length === 0) {
+                el.innerHTML = `
+                    <div class="no-events">
+                        <div class="icon">🔧</div>
+                        <div>No healing events yet</div>
+                        <div style="font-size:0.85em;margin-top:8px;">Events will appear here when the system attempts to heal failed clicks</div>
+                    </div>
+                `;
+                return;
+            }
+            
+            let html = '';
+            
+            // Active events first
+            for (const event of active) {
+                html += renderEvent(event, true);
+            }
+            
+            // Recent events
+            for (const event of recent) {
+                // Skip if already shown as active
+                if (active.find(a => a.id === event.id)) continue;
+                html += renderEvent(event, false);
+            }
+            
+            el.innerHTML = html;
+        }
+        
+        function renderEvent(event, isActive) {
+            const statusClass = event.status;
+            const activeClass = isActive ? 'active-healing' : '';
+            
+            let detailsHtml = `
+                <div class="event-detail">
+                    <div class="event-detail-label">Click Index</div>
+                    <div class="event-detail-value">#${event.click_index}</div>
+                </div>
+                <div class="event-detail">
+                    <div class="event-detail-label">Similarity</div>
+                    <div class="event-detail-value">${(event.similarity * 100).toFixed(1)}%</div>
+                </div>
+                <div class="event-detail">
+                    <div class="event-detail-label">Old Coords</div>
+                    <div class="event-detail-value">${formatCoords(event.old_coords)}</div>
+                </div>
+            `;
+            
+            if (event.new_coords) {
+                detailsHtml += `
+                    <div class="event-detail">
+                        <div class="event-detail-label">New Coords</div>
+                        <div class="event-detail-value" style="color:var(--success)">${formatCoords(event.new_coords)}</div>
+                    </div>
+                `;
+            }
+            
+            if (event.ai_confidence > 0) {
+                detailsHtml += `
+                    <div class="event-detail">
+                        <div class="event-detail-label">AI Confidence</div>
+                        <div class="event-detail-value">${(event.ai_confidence * 100).toFixed(0)}%</div>
+                    </div>
+                `;
+            }
+            
+            if (event.duration_ms > 0) {
+                detailsHtml += `
+                    <div class="event-detail">
+                        <div class="event-detail-label">Duration</div>
+                        <div class="event-detail-value">${(event.duration_ms / 1000).toFixed(1)}s</div>
+                    </div>
+                `;
+            }
+            
+            let reasoningHtml = '';
+            if (event.ai_reasoning) {
+                reasoningHtml = `<div class="event-reasoning">${event.ai_reasoning}</div>`;
+            }
+            if (event.error_message) {
+                reasoningHtml = `<div class="event-reasoning" style="color:var(--danger);">${event.error_message}</div>`;
+            }
+            
+            return `
+                <div class="event-item ${statusClass} ${activeClass}">
+                    <div class="event-header">
+                        <div>
+                            <span class="event-workflow">${event.workflow.replace('_default', '')}</span>
+                            <span class="event-status ${statusClass}">${event.status.replace('_', ' ')}</span>
+                        </div>
+                        <span class="event-time">${formatTime(event.timestamp)}</span>
+                    </div>
+                    <div class="event-details">
+                        ${detailsHtml}
+                    </div>
+                    ${reasoningHtml}
+                </div>
+            `;
+        }
+        
+        async function refreshData() {
+            const status = await fetchStatus();
+            if (status) {
+                updateStatusIndicator(status);
+                updateStats(status);
+                updateEvents(status);
+            }
+        }
+        
+        async function toggleHealing(enabled) {
+            try {
+                await fetch('/heal/api/toggle', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({enabled})
+                });
+                refreshData();
+            } catch (e) {
+                console.error('Failed to toggle:', e);
+            }
+        }
+        
+        async function clearHistory() {
+            try {
+                await fetch('/heal/api/clear', {method: 'POST'});
+                document.getElementById('live-logs').innerHTML = '<div style="color:var(--muted);">Logs cleared</div>';
+                refreshData();
+            } catch (e) {
+                console.error('Failed to clear:', e);
+            }
+        }
+        
+        function clearLogs() {
+            document.getElementById('live-logs').innerHTML = '<div style="color:var(--muted);">Logs cleared</div>';
+            lastLogId = 0;
+        }
+        
+        // Live Logs
+        let lastLogId = 0;
+        
+        async function fetchLogs() {
+            try {
+                const resp = await fetch(`/heal/api/logs?since=${lastLogId}`);
+                const data = await resp.json();
+                if (data.logs && data.logs.length > 0) {
+                    const logsEl = document.getElementById('live-logs');
+                    for (const log of data.logs) {
+                        if (log.id > lastLogId) {
+                            lastLogId = log.id;
+                            const color = log.level === 'ERROR' ? 'var(--danger)' : 
+                                          log.level === 'WARN' ? 'var(--warning)' : 
+                                          log.level === 'INFO' ? '#8be9fd' : 'var(--muted)';
+                            const time = new Date(log.timestamp).toLocaleTimeString();
+                            const line = document.createElement('div');
+                            line.innerHTML = `<span style="color:var(--muted)">[${time}]</span> <span style="color:${color}">${log.message}</span>`;
+                            logsEl.appendChild(line);
+                            logsEl.scrollTop = logsEl.scrollHeight;
+                        }
+                    }
+                }
+            } catch (e) {
+                console.error('Failed to fetch logs:', e);
+            }
+        }
+        
+        // Manual Heal Functions
+        async function loadWorkflows() {
+            try {
+                const resp = await fetch('/heal/api/workflows');
+                const data = await resp.json();
+                const select = document.getElementById('workflow-select');
+                select.innerHTML = '<option value="">Select workflow...</option>';
+                for (const w of data.workflows || []) {
+                    const opt = document.createElement('option');
+                    opt.value = w;
+                    opt.textContent = w.replace('_default', '');
+                    select.appendChild(opt);
+                }
+            } catch (e) {
+                console.error('Failed to load workflows:', e);
+            }
+        }
+        
+        async function scanWorkflow() {
+            const workflow = document.getElementById('workflow-select').value;
+            if (!workflow) {
+                alert('Select a workflow first');
+                return;
+            }
+            
+            const resultsEl = document.getElementById('scan-results');
+            resultsEl.innerHTML = '<div style="color:var(--warning)">Scanning...</div>';
+            document.getElementById('btn-scan').disabled = true;
+            
+            try {
+                const resp = await fetch(`/heal/api/scan/${workflow}`, {method: 'POST'});
+                const data = await resp.json();
+                
+                if (data.error) {
+                    resultsEl.innerHTML = `<div style="color:var(--danger)">${data.error}</div>`;
+                    return;
+                }
+                
+                let html = `<div style="margin-bottom:8px;">
+                    <strong>${data.total_clicks}</strong> clicks, 
+                    <strong>${data.with_baselines}</strong> with baselines,
+                    <strong style="color:${data.needs_healing > 0 ? 'var(--danger)' : 'var(--success)'}">${data.needs_healing}</strong> need healing
+                </div>`;
+                
+                if (data.clicks) {
+                    for (const c of data.clicks) {
+                        const simPct = c.similarity != null ? (c.similarity * 100).toFixed(0) + '%' : '-';
+                        const status = c.needs_healing ? '❌' : (c.has_baseline ? '✅' : '⚪');
+                        const color = c.needs_healing ? 'var(--danger)' : (c.similarity > 0.7 ? 'var(--success)' : 'var(--warning)');
+                        html += `<div style="padding:4px 0;border-bottom:1px solid var(--border);">
+                            ${status} Click #${c.click_index}: <span style="color:${color}">${simPct}</span>
+                            <span style="color:var(--muted);font-size:0.9em;">(${c.x}, ${c.y})</span>
+                        </div>`;
+                    }
+                }
+                
+                resultsEl.innerHTML = html;
+            } catch (e) {
+                resultsEl.innerHTML = `<div style="color:var(--danger)">Error: ${e}</div>`;
+            } finally {
+                document.getElementById('btn-scan').disabled = false;
+            }
+        }
+        
+        async function healWorkflow() {
+            const workflow = document.getElementById('workflow-select').value;
+            if (!workflow) {
+                alert('Select a workflow first');
+                return;
+            }
+            
+            if (!confirm(`Start healing ${workflow}? Watch the Live Logs panel for progress.`)) {
+                return;
+            }
+            
+            const resultsEl = document.getElementById('scan-results');
+            resultsEl.innerHTML = '<div style="color:var(--accent)">Healing in progress... Watch Live Logs!</div>';
+            document.getElementById('btn-heal').disabled = true;
+            
+            try {
+                const resp = await fetch(`/heal/api/heal/${workflow}`, {method: 'POST'});
+                const data = await resp.json();
+                
+                if (data.error) {
+                    resultsEl.innerHTML = `<div style="color:var(--danger)">${data.error}</div>`;
+                    return;
+                }
+                
+                let html = `<div style="padding:8px;background:var(--panel-2);border-radius:6px;">
+                    <strong>Heal Complete!</strong><br>
+                    Healed: <span style="color:var(--success)">${data.healed}</span> | 
+                    Failed: <span style="color:var(--danger)">${data.failed}</span>
+                </div>`;
+                
+                resultsEl.innerHTML = html;
+                refreshData();
+            } catch (e) {
+                resultsEl.innerHTML = `<div style="color:var(--danger)">Error: ${e}</div>`;
+            } finally {
+                document.getElementById('btn-heal').disabled = false;
+            }
+        }
+        
+        function startAutoRefresh() {
+            countdown = 5;
+            document.getElementById('refresh-countdown').textContent = countdown;
+            
+            if (refreshInterval) clearInterval(refreshInterval);
+            
+            refreshInterval = setInterval(() => {
+                countdown--;
+                document.getElementById('refresh-countdown').textContent = countdown;
+                
+                if (countdown <= 0) {
+                    countdown = 5;
+                    refreshData();
+                }
+                
+                // Also fetch logs more frequently
+                fetchLogs();
+            }, 1000);
+        }
+        
+        // Initial load
+        loadWorkflows();
+        refreshData();
+        fetchLogs();
+        startAutoRefresh();
     </script>
 </body>
 </html>

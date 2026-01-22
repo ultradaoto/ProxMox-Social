@@ -214,6 +214,32 @@ class BrainOrchestrator:
 
         logger.info(f"Initialized JSON-based workflows for: {[p.value for p in self.workflows.keys()]}")
     
+    def reload_workflows(self):
+        """
+        Reload all workflows from their JSON files.
+        Call this after workflow JSON files are modified (e.g., by self-healing).
+        """
+        logger.info("Reloading workflows from JSON files...")
+        self.workflows.clear()
+        self._initialize_workflows()
+        logger.info("Workflows reloaded")
+    
+    def reload_workflow(self, platform: Platform):
+        """Reload a single workflow by platform."""
+        logger.info(f"Reloading {platform.value} workflow...")
+        try:
+            if platform == Platform.INSTAGRAM:
+                self.workflows[platform] = create_instagram_workflow(self.vnc, self.vision, self.input)
+            elif platform == Platform.SKOOL:
+                self.workflows[platform] = create_skool_workflow(self.vnc, self.vision, self.input)
+            elif platform == Platform.FACEBOOK:
+                self.workflows[platform] = create_facebook_workflow(self.vnc, self.vision, self.input)
+            elif platform == Platform.LINKEDIN:
+                self.workflows[platform] = create_linkedin_workflow(self.vnc, self.vision, self.input)
+            logger.info(f"Reloaded {platform.value} workflow: {len(self.workflows[platform].actions)} actions")
+        except Exception as e:
+            logger.error(f"Failed to reload {platform.value} workflow: {e}")
+    
     async def shutdown(self):
         """Shutdown all subsystems gracefully."""
         logger.info("Shutting down brain...")
@@ -223,7 +249,7 @@ class BrainOrchestrator:
             await self.fetcher.shutdown()
         if self.reporter:
             await self.reporter.shutdown()
-        
+            
         logger.info("Brain shutdown complete")
     
     async def run_forever(self):

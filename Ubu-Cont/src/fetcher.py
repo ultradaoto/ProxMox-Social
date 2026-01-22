@@ -36,10 +36,11 @@ class PendingPost:
     url: str                          # Platform URL to open
     title: str                        # Post title
     body: str                         # Post body/content
-    image_path: Optional[str]         # Path to image on Windows
-    image_base64: Optional[str]       # Base64 image data
-    send_email: bool                  # Whether to toggle email send
+    image_path: Optional[str] = None  # Path to image on Windows
+    image_base64: Optional[str] = None # Base64 image data
+    send_email: bool = False           # Whether to toggle email send
     hashtags: List[str] = field(default_factory=list)
+    media: List[Dict[str, Any]] = field(default_factory=list) # Full media objects from API
     metadata: Dict[str, Any] = field(default_factory=dict)
     
     @classmethod
@@ -85,6 +86,7 @@ class PendingPost:
             image_base64=data.get("image_base64"),
             send_email=send_email,
             hashtags=data.get("hashtags", []),
+            media=data.get("media", []),
             metadata=data.get("metadata", {})
         )
 
@@ -171,6 +173,8 @@ class Fetcher:
         except Exception as e:
             logger.exception(f"Unexpected error fetching post: {e}")
         
+        return None
+    
         return None
     
     async def get_all_pending_posts(self) -> List[PendingPost]:
