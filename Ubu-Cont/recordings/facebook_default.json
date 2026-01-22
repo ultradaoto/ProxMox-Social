@@ -8,10 +8,18 @@
       "y": 270
     },
     {
+      "button": "left",
+      "ctrl": false,
+      "delay_before_ms": 1000,
       "delay_ms": 10000,
       "description": "Wait for Facebook page to load",
-      "type": "wait",
-      "button": "left",
+      "shift": false,
+      "type": "wait"
+    },
+    {
+      "type": "key",
+      "key": "pageup",
+      "description": "Page Up to scroll to top",
       "delay_before_ms": 1000,
       "ctrl": false,
       "shift": false

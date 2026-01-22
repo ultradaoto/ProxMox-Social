@@ -269,7 +269,7 @@ VIEWER_HTML = """
     <div class="main-panel">
         <div class="top-bar">
             <h1>Windows 10 Live Control</h1>
-            <div class="status">Streaming from {{ vnc_host }} | <span id="mode-indicator">Interactive Mode</span></div>
+            <div class="status">Streaming from {{ vnc_host }} | <span id="mode-indicator">Interactive Mode</span> | <a href="/runs/" style="color:#60a5fa;">Runs</a></div>
         </div>
         
         <div class="container" tabindex="0" id="view-container">
@@ -346,7 +346,11 @@ VIEWER_HTML = """
                     <button onclick="saveRecording()">Save</button>
                     <button onclick="saveRecordingAs()">Save As</button>
                     <button onclick="testPlayback()" class="success" id="btn-playback">Test Playback</button>
+                    <button onclick="recordBaseline()" style="background:#7a4b1b;border-color:#a16b2b;" id="btn-baseline">Record Baseline</button>
                     <button onclick="abortPlayback()" class="danger" id="btn-abort" style="display:none">Abort</button>
+                </div>
+                <div style="font-size:0.7em;color:#9aa6b2;margin-top:4px;">
+                    <a href="/runs/" target="_blank" style="color:#60a5fa;">View Runs Comparison</a>
                 </div>
             </div>
         </div>
@@ -1280,7 +1284,58 @@ VIEWER_HTML = """
             }
             isPlayingBack = false;
             document.getElementById('btn-playback').style.display = 'inline-block';
+            document.getElementById('btn-baseline').style.display = 'inline-block';
             document.getElementById('btn-abort').style.display = 'none';
+        }
+        
+        async function recordBaseline() {
+            if (!currentRecording || !currentRecording.actions.length) {
+                alert('No actions to play');
+                return;
+            }
+            if (!currentFilename) {
+                alert('Please save the recording first');
+                return;
+            }
+            if (!confirm('Record Baseline?\\n\\nThis will:\\n1. Run through the workflow\\n2. Capture 100x100 screenshots before each click\\n3. Save them as baseline images with crosshair\\n\\nThis will control the VM.')) return;
+            
+            playbackAborted = false;
+            isPlayingBack = true;
+            document.getElementById('btn-playback').style.display = 'none';
+            document.getElementById('btn-baseline').style.display = 'none';
+            document.getElementById('btn-abort').style.display = 'inline-block';
+            info.innerText = 'Recording baselines...';
+            
+            const workflowName = currentFilename.replace('.json', '');
+            
+            try {
+                const resp = await fetch('/validation/record-baseline', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        actions: currentRecording.actions,
+                        workflow_name: workflowName
+                    })
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    if (!playbackAborted) {
+                        alert('Baseline recording complete!\\n' + data.baselines_created + ' baselines captured with crosshairs.\\n\\nView them at /runs/');
+                    }
+                } else {
+                    alert('Baseline recording error: ' + data.error);
+                }
+            } catch (err) {
+                if (!playbackAborted) {
+                    alert('Baseline recording failed: ' + err);
+                }
+            } finally {
+                isPlayingBack = false;
+                document.getElementById('btn-playback').style.display = 'inline-block';
+                document.getElementById('btn-baseline').style.display = 'inline-block';
+                document.getElementById('btn-abort').style.display = 'none';
+                info.innerText = 'Baseline recording finished';
+            }
         }
         
         // Override click handler for recording and coord edit
@@ -1846,6 +1901,563 @@ def vnc_status():
         'frame_age_seconds': round(frame_age, 1) if frame_age else None,
         'connected': proc_alive and has_frame and frame_fresh
     })
+
+# =====================================================
+# VISUAL VALIDATION ENDPOINTS
+# =====================================================
+
+# Try to import validation modules (optional feature)
+try:
+    from validation.database import ValidationDatabase
+    from validation.baseline_manager import BaselineManager
+    VALIDATION_AVAILABLE = True
+    VALIDATION_DB_PATH = os.path.join(os.path.dirname(__file__), '..', 'workflow-validation', 'validation.db')
+    os.makedirs(os.path.dirname(VALIDATION_DB_PATH), exist_ok=True)
+    logger.info("Visual validation module loaded")
+except ImportError as e:
+    VALIDATION_AVAILABLE = False
+    logger.warning(f"Visual validation not available: {e}")
+
+def capture_screenshot_region(click_x: int, click_y: int, box_size: int = 100) -> bytes:
+    """Capture a region around click coordinates with crosshair."""
+    from PIL import Image, ImageDraw
+    
+    # Read current VNC frame
+    if not os.path.exists(SHARED_FRAME_PATH):
+        return None
+    
+    try:
+        full_screen = Image.open(SHARED_FRAME_PATH).convert('RGB')
+    except Exception as e:
+        logger.error(f"Failed to load screen: {e}")
+        return None
+    
+    half_box = box_size // 2
+    screen_width, screen_height = full_screen.size
+    
+    # Calculate crop region
+    left = max(0, click_x - half_box)
+    top = max(0, click_y - half_box)
+    right = min(screen_width, click_x + half_box)
+    bottom = min(screen_height, click_y + half_box)
+    
+    region = full_screen.crop((left, top, right, bottom))
+    
+    # Pad if near edge
+    if region.size != (box_size, box_size):
+        padded = Image.new('RGB', (box_size, box_size), (0, 0, 0))
+        paste_x = (box_size - region.size[0]) // 2
+        paste_y = (box_size - region.size[1]) // 2
+        padded.paste(region, (paste_x, paste_y))
+        region = padded
+    
+    # Draw crosshair at click point
+    draw = ImageDraw.Draw(region)
+    rel_x = click_x - left
+    rel_y = click_y - top
+    
+    # Adjust for padding if near edge
+    if click_x < half_box:
+        rel_x = half_box - (half_box - click_x)
+    if click_y < half_box:
+        rel_y = half_box - (half_box - click_y)
+    
+    crosshair_size = 8
+    line_width = 2
+    
+    # White outline
+    for offset in [-1, 0, 1]:
+        draw.line([(rel_x - crosshair_size + offset, rel_y), (rel_x + crosshair_size + offset, rel_y)], fill='white', width=line_width + 2)
+        draw.line([(rel_x, rel_y - crosshair_size + offset), (rel_x, rel_y + crosshair_size + offset)], fill='white', width=line_width + 2)
+    
+    # Red crosshair
+    draw.line([(rel_x - crosshair_size, rel_y), (rel_x + crosshair_size, rel_y)], fill='red', width=line_width)
+    draw.line([(rel_x, rel_y - crosshair_size), (rel_x, rel_y + crosshair_size)], fill='red', width=line_width)
+    
+    # Convert to PNG bytes
+    buffer = io.BytesIO()
+    region.save(buffer, format='PNG')
+    return buffer.getvalue()
+
+@app.route('/validation/record-baseline', methods=['POST'])
+def record_baseline():
+    """Run playback while capturing screenshots for baselines - mirrors playback_recording exactly."""
+    global playback_abort_flag
+    
+    if not VALIDATION_AVAILABLE:
+        return jsonify({'error': 'Validation module not available'}), 500
+    
+    playback_abort_flag = False
+    
+    try:
+        data = request.json
+        actions = data.get('actions', [])
+        workflow_name = data.get('workflow_name', 'unknown')
+        
+        if not actions:
+            return jsonify({'error': 'No actions provided'}), 400
+        
+        ctrl = get_input_controller()
+        if not ctrl:
+            return jsonify({'error': 'Input controller not available'}), 500
+        
+        # Count click actions
+        click_actions = [a for a in actions if a.get('type') in ('click', 'right_click', 'double_click')]
+        click_count = len(click_actions)
+        
+        # Initialize database and register workflow
+        db = ValidationDatabase(VALIDATION_DB_PATH)
+        workflow_id = db.register_workflow(
+            name=workflow_name,
+            json_path=f"recordings/{workflow_name}.json",
+            platform=workflow_name.split('_')[0] if '_' in workflow_name else 'custom',
+            total_actions=len(actions),
+            click_count=click_count
+        )
+        
+        baselines_created = 0
+        click_index = 0
+        
+        for i, action in enumerate(actions):
+            if playback_abort_flag:
+                logger.info("Baseline recording aborted")
+                break
+            
+            action_type = action.get('type')
+            delay_before = action.get('delay_before_ms', 0) / 1000.0
+            
+            # Wait before action (same as playback)
+            if delay_before > 0:
+                time.sleep(delay_before)
+            
+            try:
+                if action_type == 'click':
+                    x, y = action.get('x', 0), action.get('y', 0)
+                    
+                    # CAPTURE SCREENSHOT BEFORE CLICKING
+                    screenshot_bytes = capture_screenshot_region(x, y)
+                    if screenshot_bytes:
+                        db.save_baseline(
+                            workflow_id=workflow_id,
+                            action_index=click_index,
+                            action_type=action_type,
+                            click_x=x,
+                            click_y=y,
+                            image_data=screenshot_bytes,
+                            description=action.get('description', '')
+                        )
+                        baselines_created += 1
+                        logger.info(f"Baseline {click_index}: captured at ({x}, {y})")
+                    click_index += 1
+                    
+                    # Now click (same as playback)
+                    ctrl.move_to(x, y)
+                    time.sleep(0.05)
+                    ctrl.click(action.get('button', 'left'))
+                    
+                elif action_type == 'double_click':
+                    x, y = action.get('x', 0), action.get('y', 0)
+                    
+                    # CAPTURE SCREENSHOT BEFORE CLICKING
+                    screenshot_bytes = capture_screenshot_region(x, y)
+                    if screenshot_bytes:
+                        db.save_baseline(
+                            workflow_id=workflow_id,
+                            action_index=click_index,
+                            action_type=action_type,
+                            click_x=x,
+                            click_y=y,
+                            image_data=screenshot_bytes,
+                            description=action.get('description', '')
+                        )
+                        baselines_created += 1
+                        logger.info(f"Baseline {click_index}: captured at ({x}, {y})")
+                    click_index += 1
+                    
+                    ctrl.move_to(x, y)
+                    time.sleep(0.05)
+                    ctrl.click('left')
+                    time.sleep(0.1)
+                    ctrl.click('left')
+
+                elif action_type == 'right_click':
+                    x, y = action.get('x', 0), action.get('y', 0)
+                    
+                    # CAPTURE SCREENSHOT BEFORE CLICKING
+                    screenshot_bytes = capture_screenshot_region(x, y)
+                    if screenshot_bytes:
+                        db.save_baseline(
+                            workflow_id=workflow_id,
+                            action_index=click_index,
+                            action_type=action_type,
+                            click_x=x,
+                            click_y=y,
+                            image_data=screenshot_bytes,
+                            description=action.get('description', '')
+                        )
+                        baselines_created += 1
+                        logger.info(f"Baseline {click_index}: captured at ({x}, {y})")
+                    click_index += 1
+                    
+                    ctrl.move_to(x, y)
+                    time.sleep(0.05)
+                    ctrl.click('right')
+                    
+                elif action_type == 'wait':
+                    delay_ms = action.get('delay_ms', 0)
+                    time.sleep(delay_ms / 1000.0)
+                    
+                elif action_type == 'key':
+                    key = action.get('key', '')
+                    ctrl_mod = action.get('ctrl', False)
+                    shift_mod = action.get('shift', False)
+                    
+                    if ctrl_mod:
+                        ctrl.keyboard._send_key('ctrl', 'down')
+                        time.sleep(0.05)
+                        ctrl.keyboard._send_key(key.lower(), 'press')
+                        time.sleep(0.05)
+                        ctrl.keyboard._send_key('ctrl', 'up')
+                    elif shift_mod:
+                        ctrl.keyboard._send_key('shift', 'down')
+                        time.sleep(0.05)
+                        ctrl.keyboard._send_key(key.lower(), 'press')
+                        time.sleep(0.05)
+                        ctrl.keyboard._send_key('shift', 'up')
+                    else:
+                        ctrl.keyboard._send_key(key, 'press')
+
+                elif action_type == 'paste':
+                    ctrl.keyboard._send_key('ctrl', 'down')
+                    time.sleep(0.05)
+                    ctrl.keyboard._send_key('v', 'press')
+                    time.sleep(0.05)
+                    ctrl.keyboard._send_key('ctrl', 'up')
+                    
+                elif action_type == 'type':
+                    text = action.get('text', '')
+                    for char in text:
+                        ctrl.keyboard._send_key(char, 'press')
+                        time.sleep(0.05)
+                    
+                elif action_type == 'scroll':
+                    delta = action.get('delta', 0)
+                    ctrl.scroll_raw(delta)
+
+                elif action_type == 'wait_for_change':
+                    timeout_ms = action.get('timeout_ms', 5000)
+                    threshold = action.get('threshold', 10)
+                    start = time.time()
+                    last = get_latest_frame()
+                    if last is not None:
+                        last_np = np.array(last)
+                        while (time.time() - start) * 1000 < timeout_ms:
+                            time.sleep(0.2)
+                            current = get_latest_frame()
+                            if current is None:
+                                continue
+                            cur_np = np.array(current)
+                            if cur_np.shape != last_np.shape:
+                                break
+                            diff = np.abs(cur_np.astype(np.int16) - last_np.astype(np.int16))
+                            if diff.mean() > threshold:
+                                break
+                
+                # Wait after action (same as original)
+                delay_ms = action.get('delay_ms', 0)
+                if delay_ms > 0:
+                    time.sleep(delay_ms / 1000.0)
+                    
+            except Exception as e:
+                logger.error(f"Baseline action {i} failed: {e}")
+        
+        return jsonify({
+            'success': True,
+            'baselines_created': baselines_created,
+            'workflow_name': workflow_name
+        })
+        
+    except Exception as e:
+        logger.error(f"Record baseline failed: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/validation/status/<workflow_name>', methods=['GET'])
+def validation_status(workflow_name):
+    """Get validation status for a workflow."""
+    if not VALIDATION_AVAILABLE:
+        return jsonify({'error': 'Validation not available'})
+    
+    try:
+        db = ValidationDatabase(VALIDATION_DB_PATH)
+        
+        # Get workflow info
+        workflow = db.get_workflow(workflow_name)
+        if not workflow:
+            return jsonify({'error': 'Workflow not registered', 'baselines_count': 0, 'total_clicks': 0})
+        
+        workflow_id = workflow['id']
+        
+        # Get baselines count
+        baselines = db.get_baselines(workflow_id)
+        baselines_count = len(baselines)
+        total_clicks = workflow.get('click_count', 0)
+        
+        # Get recent runs (simplified - just count from runs table)
+        success_runs = 0
+        failed_runs = 0
+        
+        coverage = (baselines_count / total_clicks * 100) if total_clicks > 0 else 0
+        
+        return jsonify({
+            'workflow_name': workflow_name,
+            'baselines_count': baselines_count,
+            'total_clicks': total_clicks,
+            'coverage_percent': coverage,
+            'success_runs': success_runs,
+            'failed_runs': failed_runs,
+            'alerts': []
+        })
+    except Exception as e:
+        logger.error(f"Validation status error: {e}")
+        return jsonify({'error': str(e)})
+
+@app.route('/validation/baseline/<workflow_name>/<int:action_index>', methods=['GET'])
+def get_baseline_image(workflow_name, action_index):
+    """Serve a baseline image."""
+    if not VALIDATION_AVAILABLE:
+        return "Validation not available", 404
+    
+    try:
+        db = ValidationDatabase(VALIDATION_DB_PATH)
+        workflow = db.get_workflow(workflow_name)
+        if not workflow:
+            return "Workflow not found", 404
+        
+        baselines = db.get_baselines(workflow['id'])
+        
+        for b in baselines:
+            if b.get('action_index') == action_index:
+                return Response(b['baseline_image'], mimetype='image/png')
+        
+        return "Baseline not found", 404
+    except Exception as e:
+        return str(e), 500
+
+@app.route('/validation/runs/<workflow_name>', methods=['GET'])
+def get_workflow_runs(workflow_name):
+    """Get recent runs with screenshots for a workflow."""
+    if not VALIDATION_AVAILABLE:
+        return jsonify({'error': 'Validation not available'}), 500
+    
+    try:
+        db = ValidationDatabase(VALIDATION_DB_PATH)
+        workflow = db.get_workflow(workflow_name)
+        if not workflow:
+            return jsonify({'error': 'Workflow not found', 'runs': []})
+        
+        workflow_id = workflow['id']
+        
+        # Get recent runs
+        with db._get_connection() as conn:
+            runs = conn.execute('''
+                SELECT id, post_id, status, started_at, completed_at
+                FROM workflow_runs
+                WHERE workflow_id = ?
+                ORDER BY started_at DESC
+                LIMIT 3
+            ''', (workflow_id,)).fetchall()
+            runs = [dict(r) for r in runs]
+        
+        # For each run, get screenshot action indices
+        for run in runs:
+            with db._get_connection() as conn:
+                screenshots = conn.execute('''
+                    SELECT action_index, click_x, click_y, baseline_match_score, is_match
+                    FROM run_screenshots
+                    WHERE run_id = ?
+                    ORDER BY action_index
+                ''', (run['id'],)).fetchall()
+                run['screenshots'] = [dict(s) for s in screenshots]
+        
+        return jsonify({
+            'workflow_name': workflow_name,
+            'runs': runs
+        })
+    except Exception as e:
+        logger.error(f"Get runs error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/validation/run-screenshot/<int:run_id>/<int:action_index>', methods=['GET'])
+def get_run_screenshot(run_id, action_index):
+    """Serve a screenshot from a specific run."""
+    if not VALIDATION_AVAILABLE:
+        return "Validation not available", 404
+    
+    try:
+        db = ValidationDatabase(VALIDATION_DB_PATH)
+        with db._get_connection() as conn:
+            row = conn.execute('''
+                SELECT captured_image FROM run_screenshots
+                WHERE run_id = ? AND action_index = ?
+            ''', (run_id, action_index)).fetchone()
+        
+        if row and row['captured_image']:
+            return Response(row['captured_image'], mimetype='image/png')
+        
+        return "Screenshot not found", 404
+    except Exception as e:
+        return str(e), 500
+
+@app.route('/runs/')
+def runs_comparison_page():
+    """Page showing baseline vs run comparison grid."""
+    return render_template_string(RUNS_COMPARISON_HTML)
+
+RUNS_COMPARISON_HTML = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Workflow Runs Comparison</title>
+    <style>
+        :root {
+            --bg: #0a0f1a;
+            --panel: #111827;
+            --border: #1f2937;
+            --text: #e5e7eb;
+            --muted: #6b7280;
+            --accent: #3b82f6;
+            --success: #10b981;
+            --danger: #ef4444;
+        }
+        * { box-sizing: border-box; }
+        body { margin: 0; padding: 20px; background: var(--bg); color: var(--text); font-family: system-ui, sans-serif; }
+        h1 { margin: 0 0 20px 0; font-size: 1.5em; }
+        .controls { margin-bottom: 20px; display: flex; gap: 10px; align-items: center; }
+        select { background: var(--panel); color: var(--text); border: 1px solid var(--border); padding: 8px 12px; border-radius: 6px; }
+        .grid { display: grid; gap: 2px; background: var(--border); }
+        .grid-header { display: contents; }
+        .grid-header > div { background: var(--panel); padding: 10px; font-weight: 600; text-align: center; position: sticky; top: 0; }
+        .grid-row { display: contents; }
+        .grid-row > div { background: var(--bg); padding: 8px; display: flex; align-items: center; justify-content: center; }
+        .action-info { flex-direction: column; text-align: center; font-size: 0.8em; }
+        .action-info .idx { font-size: 1.2em; font-weight: bold; color: var(--accent); }
+        .action-info .coords { color: var(--muted); }
+        .screenshot { width: 100px; height: 100px; border: 2px solid var(--border); border-radius: 4px; object-fit: contain; background: #000; }
+        .screenshot.match { border-color: var(--success); }
+        .screenshot.mismatch { border-color: var(--danger); }
+        .no-baseline { width: 100px; height: 100px; display: flex; align-items: center; justify-content: center; background: var(--panel); border-radius: 4px; color: var(--muted); font-size: 0.7em; }
+        .match-pct { font-size: 0.7em; margin-top: 4px; }
+        .match-pct.good { color: var(--success); }
+        .match-pct.bad { color: var(--danger); }
+        a { color: var(--accent); }
+    </style>
+</head>
+<body>
+    <h1>Workflow Runs Comparison</h1>
+    <p><a href="/">&larr; Back to Editor</a></p>
+    
+    <div class="controls">
+        <label>Workflow:</label>
+        <select id="workflow-select" onchange="loadComparison()">
+            <option value="">-- Select Workflow --</option>
+        </select>
+        <span id="status" style="color:var(--muted);font-size:0.9em;"></span>
+    </div>
+    
+    <div id="grid-container"></div>
+    
+    <script>
+        async function loadWorkflows() {
+            const resp = await fetch('/recording/list');
+            const data = await resp.json();
+            const sel = document.getElementById('workflow-select');
+            data.recordings.forEach(r => {
+                const opt = document.createElement('option');
+                opt.value = r.filename.replace('.json', '');
+                opt.textContent = r.filename;
+                sel.appendChild(opt);
+            });
+        }
+        
+        async function loadComparison() {
+            const workflow = document.getElementById('workflow-select').value;
+            if (!workflow) return;
+            
+            document.getElementById('status').textContent = 'Loading...';
+            
+            try {
+                // Get baseline status
+                const statusResp = await fetch(`/validation/status/${workflow}`);
+                const status = await statusResp.json();
+                
+                if (status.baselines_count === 0) {
+                    document.getElementById('grid-container').innerHTML = '<p style="color:var(--muted)">No baselines recorded yet. Use "Record Baseline" in the editor.</p>';
+                    document.getElementById('status').textContent = '';
+                    return;
+                }
+                
+                // Get recent runs
+                const runsResp = await fetch(`/validation/runs/${workflow}`);
+                const runsData = await runsResp.json();
+                const runs = runsData.runs || [];
+                
+                // Build grid
+                let html = '<div class="grid" style="grid-template-columns: 120px repeat(' + (1 + 3) + ', 120px);">';
+                html += '<div class="grid-header"><div>Action</div><div>Baseline</div>';
+                for (let r = 0; r < 3; r++) {
+                    if (runs[r]) {
+                        const runTime = runs[r].started_at ? runs[r].started_at.split('T')[1]?.substring(0,5) || '' : '';
+                        const runStatus = runs[r].status || '';
+                        html += `<div title="${runs[r].post_id || 'Run ' + (r+1)}">Run ${r+1}<br><small style="color:var(--muted)">${runTime} ${runStatus}</small></div>`;
+                    } else {
+                        html += `<div>Run ${r+1}</div>`;
+                    }
+                }
+                html += '</div>';
+                
+                for (let i = 0; i < status.baselines_count; i++) {
+                    html += '<div class="grid-row">';
+                    html += `<div class="action-info"><span class="idx">#${i}</span></div>`;
+                    html += `<div><img class="screenshot" src="/validation/baseline/${workflow}/${i}" onerror="this.parentElement.innerHTML='<div class=no-baseline>-</div>'"></div>`;
+                    
+                    // Add run screenshots
+                    for (let r = 0; r < 3; r++) {
+                        if (runs[r]) {
+                            const screenshot = runs[r].screenshots?.find(s => s.action_index === i);
+                            if (screenshot) {
+                                const matchClass = screenshot.is_match === true ? 'match' : (screenshot.is_match === false ? 'mismatch' : '');
+                                const matchPct = screenshot.baseline_match_score != null ? (screenshot.baseline_match_score * 100).toFixed(0) + '%' : '';
+                                html += `<div style="flex-direction:column"><img class="screenshot ${matchClass}" src="/validation/run-screenshot/${runs[r].id}/${i}" onerror="this.parentElement.innerHTML='<div class=no-baseline>err</div>'">`;
+                                if (matchPct) {
+                                    const pctClass = screenshot.is_match ? 'good' : 'bad';
+                                    html += `<span class="match-pct ${pctClass}">${matchPct}</span>`;
+                                }
+                                html += `</div>`;
+                            } else {
+                                html += '<div class="no-baseline">-</div>';
+                            }
+                        } else {
+                            html += '<div class="no-baseline">-</div>';
+                        }
+                    }
+                    html += '</div>';
+                }
+                
+                html += '</div>';
+                document.getElementById('grid-container').innerHTML = html;
+                document.getElementById('status').textContent = `${status.baselines_count} baselines, ${runs.length} recent runs`;
+                
+            } catch (err) {
+                document.getElementById('status').textContent = 'Error: ' + err;
+                console.error(err);
+            }
+        }
+        
+        loadWorkflows();
+    </script>
+</body>
+</html>
+"""
 
 if __name__ == '__main__':
     # Start Capture Process

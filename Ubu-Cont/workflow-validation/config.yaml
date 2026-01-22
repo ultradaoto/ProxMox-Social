@@ -1,0 +1,46 @@
+# Workflow Visual Validation Configuration
+
+database:
+  path: "/home/ultra/proxmox-social/Ubu-Cont/workflow-validation/validation.db"
+
+vnc:
+  host: "192.168.100.101"
+  port: 5900
+
+screenshot:
+  box_size: 100                    # 100x100 pixel capture around click
+  format: "PNG"
+  compression: 6                   # PNG compression level (0-9)
+
+validation:
+  default_threshold: 0.95          # 95% similarity required
+  strict_threshold: 0.98           # For critical clicks
+  lenient_threshold: 0.85          # For dynamic content areas
+  
+  validate_actions:
+    - "click"
+    - "double_click"
+    - "right_click"
+  
+  skip_actions:
+    - "wait"
+    - "key"
+    - "type"
+    - "scroll"
+    - "paste"
+    - "wait_for_change"
+
+comparison:
+  algorithm: "structural_similarity"  # Options: 'hash', 'structural_similarity', 'pixel_diff'
+  hash_size: 16
+  
+failure_handling:
+  max_consecutive_failures: 3
+  report_to_api: true
+  api_endpoint: "https://social.sterlingcooley.com/api/workflow-failure"
+
+logging:
+  level: "INFO"
+  file: "/home/ultra/proxmox-social/Ubu-Cont/workflow-validation/logs/validation.log"
+  max_size_mb: 10
+  backup_count: 5
